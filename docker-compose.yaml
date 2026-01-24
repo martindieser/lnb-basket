@@ -52,15 +52,27 @@ x-airflow-common:
   # image: ${AIRFLOW_IMAGE_NAME:-apache/airflow:3.1.6}
   build:
     context : .
-    dockerfile: Dockerfile.airflow
-    target: base-setup
-
+    args:
+      CERT_PATH: ${CERT_PATH}
+      PROXY_URL: ${PROXY_URL}
+    dockerfile: Dockerfile
   env_file:
     - .env 
 
   environment:
     &airflow-common-env
     PYTHONPATH: "/opt/airflow:/opt/airflow/dags:/opt/airflow/plugins"
+    # HTTP_PROXY: "http://host.docker.internal:8080"
+    # HTTPS_PROXY: "http://host.docker.internal:8080"
+    # http_proxy: "http://host.docker.internal:8080"
+    # https_proxy: "http://host.docker.internal:8080"
+    NO_PROXY: "localhost,127.0.0.1,postgres,airflow-apiserver"
+    # REQUESTS_CA_BUNDLE: "/etc/ssl/certs/ca-certificates.crt"
+    # SSL_CERT_FILE: "/etc/ssl/certs/ca-certificates.crt"
+    # CURL_CA_BUNDLE: "/etc/ssl/certs/ca-certificates.crt"
+
+
+
     AIRFLOW__CORE__EXECUTOR: LocalExecutor
     AIRFLOW__CORE__AUTH_MANAGER: airflow.providers.fab.auth_manager.fab_auth_manager.FabAuthManager
     AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
@@ -86,6 +98,7 @@ x-airflow-common:
     - ${AIRFLOW_PROJ_DIR}/config:/opt/airflow/config
     - ${AIRFLOW_PROJ_DIR}/plugins:/opt/airflow/plugins
     - ${AIRFLOW_PROJ_DIR}/src:/opt/airflow/src 
+    - ${AIRFLOW_PROJ_DIR}/data:/opt/airflow/data
   user: "${AIRFLOW_UID:-50000}:0"
   depends_on:
     &airflow-common-depends-on
@@ -114,7 +127,7 @@ services:
     <<: *airflow-common
     command: api-server
     ports:
-      - "8080:8080"
+      - "9000:8080"
     healthcheck:
       test: ["CMD", "curl", "--fail", "http://localhost:8080/api/v2/version"]
       interval: 30s
