@@ -1,1 +1,4 @@
-*/__pycache__/*
+j_pycache__/
+*.pyc
+*.pyo
+*.pyd
