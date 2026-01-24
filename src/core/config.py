@@ -17,3 +17,8 @@ UNKNOWN_NAME_FIX = {
 
 DB_PATH = "./data/database.db"
 CABB_PATH = "./data/"
+PINNACLE_PATH = "./data/pinnacle/"
+
+TEAM_MAPPING = {
+    
+}

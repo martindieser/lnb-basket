@@ -17,7 +17,7 @@ from src.core.config import DB_PATH, CABB_PATH
 
 @dag(
     schedule=CronDataIntervalTimetable("0 0 1 * *", timezone="UTC"), 
-    start_date=datetime(2025, 10, 1), 
+    start_date=datetime(2023, 1, 1), 
     max_active_tasks=2,
 )
 def cabb_scraping_workflow():
@@ -47,7 +47,7 @@ def cabb_scraping_workflow():
         # if cat_id is None:
         #     handler.discover_categories("liga nacional")
         #     cat_id = handler.get_category_id(internal_cat_id)
-        assert cat_id is not None, "Category ID should not be None after discovery"
+        assert cat_id is not None or cat_id == {} or cat_id == '{}', "Category ID should not be None after discovery"
         return cat_id
 
     # 3. Scrape Matches

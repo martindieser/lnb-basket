@@ -2,3 +2,4 @@ networkx
 rapidfuzz
 pandas
 numpy
+curl_cffi
