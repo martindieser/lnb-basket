@@ -16,7 +16,7 @@ from src.core.etl.cabb.load import load_data_to_db
 from src.core.config import DB_PATH, CABB_PATH 
 
 @dag(
-    schedule=CronDataIntervalTimetable("0 0 1 * *", timezone="UTC"), 
+    schedule=CronDataIntervalTimetable("0 0 * * *", timezone="UTC"),
     start_date=datetime(2023, 1, 1), 
     max_active_tasks=2,
 )
