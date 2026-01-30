@@ -50,7 +50,6 @@ def get_pbp_df(lista_pbp_dfs, lookup_teams, lookup_matches, lookup_players):
         'autoincremental_id' : 'seq',
         'equipo_id' : 'team_raw_id',
         'componente_id' : 'player_raw_id',
-        'partido_id': 'match_raw_id', # <--- ASSUMPTION: You need a column to merge matches on
         'numero_periodo' : 'period',
         'tiempo_partido' : 'clk',
         'accion_tipo' : 'event_type',
@@ -61,17 +60,21 @@ def get_pbp_df(lista_pbp_dfs, lookup_teams, lookup_matches, lookup_players):
         'informacion_adicional' : 'note',
     })
 
-    mask = df['player_raw_id'].isin(lookup_players['raw_id'].unique())
-    df.loc[~mask, 'player_raw_id'] = None
-    
-    cols_to_replace = ['team_raw_id', 'player_raw_id', 'jersey']
-    df[cols_to_replace] = df[cols_to_replace].replace(['-1', -1], None)
+   
+    for col in ['team_raw_id', 'player_raw_id']:
+        df[col] = df[col].astype(str)
 
     # Standardize types
     lookup_teams['raw_id'] = lookup_teams['raw_id'].astype(str)
     lookup_players['raw_id'] = lookup_players['raw_id'].astype(str)
-    # print(lookup_matches)
     lookup_matches['raw_id'] = lookup_matches['raw_id'].astype(str)
+
+    cols_to_replace = ['team_raw_id', 'player_raw_id', 'jersey']
+    df[cols_to_replace] = df[cols_to_replace].replace(['-1', -1], None)
+
+    mask = df['player_raw_id'].isin(lookup_players['raw_id'].unique())
+    df.loc[~mask, 'player_raw_id'] = None
+ 
 
     # --- TEAM MERGE ---
     # Rename lookup column first to avoid 'raw_id' name collision
@@ -114,6 +117,8 @@ def get_pbp_df(lista_pbp_dfs, lookup_teams, lookup_matches, lookup_players):
 
     df['pbp_id'] = df.apply(create_pbp_uuid, axis=1)
     df = df.drop_duplicates(subset=['pbp_id'], keep='first')
+    # print(df[~df['team_id'].isna()])
+    # raise ValueError('adssads<')
     
     columns = ['seq', 'period', 'clk', 'event_type', 'jersey', 'x', 'y', 'zone', 
                'note', 'team_id', 'player_id', 'match_id', 'pbp_id']
