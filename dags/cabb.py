@@ -47,7 +47,7 @@ def cabb_scraping_workflow():
         # if cat_id is None:
         #     handler.discover_categories("liga nacional")
         #     cat_id = handler.get_category_id(internal_cat_id)
-        assert cat_id is not None or cat_id == {} or cat_id == '{}', "Category ID should not be None after discovery"
+        assert (cat_id is not None) and (cat_id != {}) and (cat_id != '{}'), "Category ID should not be None after discovery"
         return cat_id
 
     # 3. Scrape Matches
