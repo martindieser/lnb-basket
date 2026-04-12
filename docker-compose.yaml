@@ -72,6 +72,19 @@ x-airflow-common:
     # CURL_CA_BUNDLE: "/etc/ssl/certs/ca-certificates.crt"
 
 
+    AIRFLOW__CORE__PARALLELISM: 16  # default is 32
+    AIRFLOW__CORE__MAX_ACTIVE_TASKS_PER_DAG: 8  # default is 16
+    AIRFLOW__CORE__MAX_ACTIVE_RUNS_PER_DAG: 3  # default is 16
+    AIRFLOW__SCHEDULER__MAX_DAGRUNS_TO_CREATE_PER_LOOP: 5
+    AIRFLOW__SCHEDULER__MAX_TIS_PER_QUERY: 256  # default is 512
+    AIRFLOW__SCHEDULER__MIN_FILE_PROCESS_INTERVAL: 60  # default is 30
+    AIRFLOW__SCHEDULER__DAG_DIR_LIST_INTERVAL: 60  # default is 300
+    AIRFLOW__SCHEDULER__PARSING_PROCESSES: 2  # default is 2, reduce if needed
+    AIRFLOW__DATABASE__SQL_ALCHEMY_POOL_SIZE: 5  # default is 5
+    AIRFLOW__DATABASE__SQL_ALCHEMY_MAX_OVERFLOW: 5  # default is 10
+    AIRFLOW__METRICS__STATSD_ON: 'false'
+    AIRFLOW__SCHEDULER__STATSD_ON: 'false'
+
 
     AIRFLOW__CORE__EXECUTOR: LocalExecutor
     AIRFLOW__CORE__AUTH_MANAGER: airflow.providers.fab.auth_manager.fab_auth_manager.FabAuthManager
@@ -110,6 +123,7 @@ x-airflow-common:
 services:
   postgres:
     image: postgres:16
+
     environment:
       POSTGRES_USER: airflow
       POSTGRES_PASSWORD: airflow
@@ -149,6 +163,12 @@ services:
       timeout: 10s
       retries: 5
       start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+        reservations:
+          memory: 512M
     restart: always
     depends_on:
       <<: *airflow-common-depends-on
