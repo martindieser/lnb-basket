@@ -1,4 +1,11 @@
-j_pycache__/
+__pycache__/
 *.pyc
 *.pyo
 *.pyd
+/data/
+/notebooks/
+/config/
+/live-trader
+logs/
+notebooks/
+tracker/
