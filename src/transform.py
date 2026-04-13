@@ -9,8 +9,8 @@ from rapidfuzz import process, fuzz
 
 
 # Asumo que estos módulos están en tu estructura de carpetas local
-from ...config import UNKNOWN_NAME_FIX
-from ..utils import (
+from config import UNKNOWN_NAME_FIX
+from utils import (
     clean_text,
     NAMESPACE, 
     create_pbp_uuid, 
