@@ -1,3 +1,12 @@
+import os
+
+# Base paths with environment variable support for flexibility (Docker/Local)
+DATA_DIR = os.getenv("DATA_DIR", "./data")
+DB_PATH = os.getenv("DB_PATH", os.path.join(DATA_DIR, "database.db"))
+CABB_PATH = os.getenv("CABB_PATH", DATA_DIR)
+PINNACLE_PATH = os.getenv("PINNACLE_PATH", os.path.join(DATA_DIR, "pinnacle"))
+
+# Data Fixes and Mappings
 UNKNOWN_NAME_FIX = {
     326138: 'AALIYA, LEE ABRAHAM', 325183: 'NEGRETE, ALEX',
     328501: 'GUERRA, LUCIANO MARTIN', 220857: 'LUGARINI, BAUTISTA',
@@ -15,10 +24,6 @@ UNKNOWN_NAME_FIX = {
     326636 : 'DEVANTE WALLACE', 153017 : 'FERRI, VALENTINO'
 }
 
-DB_PATH = "./data/database.db"
-CABB_PATH = "./data/"
-PINNACLE_PATH = "./data/pinnacle/"
-
 TEAM_MAPPING = {
-    
+    # Add mappings if necessary
 }

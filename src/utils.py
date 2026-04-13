@@ -8,6 +8,25 @@ NAMESPACE = uuid.uuid5(uuid.NAMESPACE_DNS, 'basketball.etl.system')
 
 
 
+from dateutil.parser import parse
+
+def get_season_id_from_date(date_str):
+    """
+    Generates the season ID (e.g.: liganacional20232024_basketball)
+    Season cutoff: August (Month 8).
+    """
+    dt = parse(str(date_str)) if isinstance(date_str, str) else date_str
+    
+    # If it's August or later, it's the start of the new season
+    cutoff_month = 8 
+    if dt.month >= cutoff_month:
+        start_year = dt.year
+    else:
+        start_year = dt.year - 1
+        
+    end_year = start_year + 1
+    return f"liganacional{start_year}{end_year}_basketball"
+
 def clean_text(text: str, remove_punctuation: bool = True) -> str:
     """
     Normaliza el texto: elimina tildes, caracteres especiales, 
