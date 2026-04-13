@@ -1,7 +1,7 @@
-import transform
-import load
-import extract
-from config import DB_PATH
+from . import transform
+from . import load
+from . import extract
+from src.config import DB_PATH
 
 
 def run_pbp_etl_pipeline():

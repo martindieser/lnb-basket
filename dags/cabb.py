@@ -6,15 +6,14 @@ from airflow.sdk import dag, task
 from airflow.timetables.interval import CronDataIntervalTimetable
 from datetime import datetime
 
-from src.core.scrapers.cabb.lib import CABBTaskHandler, get_season_id_from_date
-from src.core.scrapers.cabb.mapping import Cache 
-from src.core.scrapers.cabb.client import CABBScraper
+from src.scrapers.cabb.lib import CABBTaskHandler, get_season_id_from_date
+from src.scrapers.cabb.mapping import Cache 
+from src.scrapers.cabb.scraper import CABBScraper
 
-from src.core.etl.cabb.extract import extract_dirs
-from src.core.etl.cabb.transform import transform_pbp_data
-from src.core.etl.cabb.load import load_data_to_db
-from src.core.config import DB_PATH, CABB_PATH 
-
+from src.etl.extract import extract_dirs
+from src.etl.transform import transform_pbp_data
+from src.etl.load import load_data_to_db
+from src.config import DB_PATH, CABB_PATH 
 @dag(
     schedule=CronDataIntervalTimetable("0 0 * * *", timezone="UTC"),
     start_date=datetime(2023, 1, 1), 
