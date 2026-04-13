@@ -30,50 +30,48 @@ def cabb_scraping_workflow():
     def get_random_profile():
         logger.info("Selecting a random profile...")
         all_profiles = Cache.available_profiles()
-        
-        if len(all_profiles) < 5:
-            CABBScraper() # Trigger registration if needed
-            all_profiles = Cache.available_profiles()
             
         selected = random.choice(all_profiles)
         logger.info(f"Selected Random Profile: {selected}")
         return selected
 
-    # 2. Get Category ID
+    # 2. Unified Scraping Phase
     @task
-    def get_category_id(profile_id, ref_date) -> str:
-        logger.info(f"Using profile {profile_id}")
-        internal_cat_id = get_season_id_from_date(ref_date)
-        scraper = CABBScraper(profile_id)
+    def execute_scraping_phase(profile_id, selected_start, selected_end):
+        logger.info(f"--- Starting Unified Scraping Phase (Profile: {profile_id}) ---")
         
+        # Single instance, single session for the whole flow
+        scraper = CABBScraper(profile_id)
+        internal_cat_id = get_season_id_from_date(selected_start)
+        
+        # A. Resolve Category
         logger.info(f"Resolving Category ID for season {internal_cat_id}")
         cat_id = scraper.get_category_id("liga nacional", internal_cat_id)
-        
         if not cat_id:
             raise ValueError(f"Category ID not found for season {internal_cat_id}")
             
-        return cat_id
-
-    # 3. Scrape Matches
-    @task
-    def scrape_matches(date_from, date_to, cat_id, profile_id):
-        internal_cat_id = get_season_id_from_date(date_from)
-        logger.info(f"Scraping matches for {internal_cat_id}")
+        # B. Fetch Matches
+        logger.info(f"Fetching matches between {selected_start} and {selected_end}")
+        matches_data = scraper.fetch_matches(cat_id, selected_start, selected_end, internal_cat_id)
         
-        scraper = CABBScraper(profile_id)
-        return scraper.fetch_matches(cat_id, date_from, date_to, internal_cat_id)
+        if not matches_data:
+            logger.warning("No matches found in this range. Skipping PBP phase.")
+            return "no_matches"
 
-    # 4. Scrape PBP
-    @task
-    def scrape_pbp(matches_dict, profile_id, selected_start):
-        logger.info(f"Scraping PBP for {profile_id}")
-        internal_cat_id = get_season_id_from_date(selected_start)
-        scraper = CABBScraper(profile_id)
-        return scraper.fetch_pbp(matches_dict, internal_cat_id)
+        # C. Fetch PBPs
+        logger.info(f"Fetching PBPs for {len(matches_data)} matches")
+        scraper.fetch_pbp(matches_data, internal_cat_id)
+        
+        logger.info("--- Scraping Phase Completed Successfully ---")
+        return "success"
 
-    # 5. ETL Batch Processing
+    # 3. ETL Batch Processing
     @task
-    def batch_processing(ref_date, upstream_trigger):
+    def batch_processing(ref_date, upstream_status):
+        if upstream_status == "no_matches":
+            logger.info("Nothing to process, skipping ETL.")
+            return
+
         season_id = get_season_id_from_date(ref_date)
         logger.info(f"Batch Processing season: {season_id}")
         
@@ -87,20 +85,17 @@ def cabb_scraping_workflow():
     selected_start = "{{ dag_run.conf.get('start_date', ds) }}"
     selected_end = "{{ dag_run.conf.get('end_date', macros.ds_add(dag_run.conf.get('start_date', ds), 7)) }}"
 
-    # Scraper Logic
+    # 1. Start: Get profile
     profile_id = get_random_profile()
-    cat_id = get_category_id(profile_id, selected_start)
 
-    matches_data = scrape_matches(
-        date_from=selected_start,
-        date_to=selected_end,
-        cat_id=cat_id,
-        profile_id=profile_id
+    # 2. Extract: Run all scraping logic in one session
+    scraping_status = execute_scraping_phase(
+        profile_id=profile_id,
+        selected_start=selected_start,
+        selected_end=selected_end
     )
 
-    pbp_result = scrape_pbp(matches_data, profile_id, selected_start)
-
-    # ETL Logic
-    batch_processing(ref_date=selected_start, upstream_trigger=pbp_result)
+    # 3. Load: Run ETL after successful scraping
+    batch_processing(ref_date=selected_start, upstream_status=scraping_status)
 
 cabb_scraping_workflow()

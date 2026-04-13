@@ -52,9 +52,6 @@ x-airflow-common:
   # image: ${AIRFLOW_IMAGE_NAME:-apache/airflow:3.1.6}
   build:
     context : .
-    args:
-      CERT_PATH: ${CERT_PATH}
-      PROXY_URL: ${PROXY_URL}
     dockerfile: Dockerfile
   env_file:
     - .env 
@@ -62,14 +59,7 @@ x-airflow-common:
   environment:
     &airflow-common-env
     PYTHONPATH: "/opt/airflow:/opt/airflow/dags:/opt/airflow/plugins"
-    # HTTP_PROXY: "http://host.docker.internal:8080"
-    # HTTPS_PROXY: "http://host.docker.internal:8080"
-    # http_proxy: "http://host.docker.internal:8080"
-    # https_proxy: "http://host.docker.internal:8080"
     NO_PROXY: "localhost,127.0.0.1,postgres,airflow-apiserver"
-    # REQUESTS_CA_BUNDLE: "/etc/ssl/certs/ca-certificates.crt"
-    # SSL_CERT_FILE: "/etc/ssl/certs/ca-certificates.crt"
-    # CURL_CA_BUNDLE: "/etc/ssl/certs/ca-certificates.crt"
 
 
     AIRFLOW__CORE__PARALLELISM: 16  # default is 32
