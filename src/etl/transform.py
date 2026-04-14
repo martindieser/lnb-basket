@@ -1,14 +1,13 @@
 import pandas as pd
 import numpy as np
 import networkx as nx
+import logging
 from datetime import datetime
 from dataclasses import dataclass, field
 from rapidfuzz import process, fuzz
 
 
 
-
-# Asumo que estos módulos están en tu estructura de carpetas local
 from src.config import UNKNOWN_NAME_FIX
 from src.utils import (
     clean_text,
@@ -331,7 +330,16 @@ def parse_payload_to_raw(payload: list) -> RawBasketballData:
                 mat['idlocal'] = team_name_to_id[nlocal]
                 # logging.info(f"Fixed Local ID for {nlocal} in match {mat['raw_id']}")
             else:
-                logging.warning(f"ID Faltante IRRECUPERABLE: Local '{nlocal}' en {mat['raw_id']}")
+                # Creamos un ID crudo falso para no romper el merge
+                fake_raw_id = f"UNKNOWN_LOCAL_{create_team_id(nlocal)[:8]}"
+                mat['idlocal'] = fake_raw_id
+                teams[fake_raw_id] = {
+                    'team_id': fake_raw_id,
+                    'team_name': nlocal,
+                    'raw_id': fake_raw_id
+                }
+                team_name_to_id[nlocal] = fake_raw_id
+                logging.warning(f"Generando ID provisorio {fake_raw_id} para Local '{nlocal}' en {mat['raw_id']}")
 
         # Chequeamos VISITANTE (Independiente del local!)
         if not mat.get('idvisitante'): # Si es None o vacío
@@ -340,7 +348,16 @@ def parse_payload_to_raw(payload: list) -> RawBasketballData:
                 mat['idvisitante'] = team_name_to_id[nvisitante]
                 # logging.info(f"Fixed Away ID for {nvisitante} in match {mat['raw_id']}")
             else:
-                logging.warning(f"ID Faltante IRRECUPERABLE: Visitante '{nvisitante}' en {mat['raw_id']}")
+                # Creamos un ID crudo falso para no romper el merge
+                fake_raw_id = f"UNKNOWN_AWAY_{create_team_id(nvisitante)[:8]}"
+                mat['idvisitante'] = fake_raw_id
+                teams[fake_raw_id] = {
+                    'team_id': fake_raw_id,
+                    'team_name': nvisitante,
+                    'raw_id': fake_raw_id
+                }
+                team_name_to_id[nvisitante] = fake_raw_id
+                logging.warning(f"Generando ID provisorio {fake_raw_id} para Visitante '{nvisitante}' en {mat['raw_id']}")
 
     
     # Convertir diccionario a lista para el output
@@ -355,6 +372,8 @@ def parse_payload_to_raw(payload: list) -> RawBasketballData:
     return raw_storage
 
 
+
+from src.stats.stints import process_events_to_stints
 
 def transform_pbp_data(payload):
     parsed_entities = parse_payload_to_raw(payload)
@@ -372,5 +391,22 @@ def transform_pbp_data(payload):
         lookup_matches,
         lookup_players
     )
+
+    # --- Generación de Stints ---
+    if df_pbps.empty:
+        return pd.DataFrame(), df_matches, df_teams, df_players, df_competitions
+
+    print("Generating Stints from Play-by-Play data...")
+    df_stints, _ = process_events_to_stints(df_matches, df_pbps)
+
+    if not df_stints.empty:
+        # Serializar alineaciones (sets -> strings) para compatibilidad con Parquet
+        df_stints['home_lineup'] = df_stints['home_lineup'].apply(lambda x: ",".join(map(str, sorted(list(x)))))
+        df_stints['away_lineup'] = df_stints['away_lineup'].apply(lambda x: ",".join(map(str, sorted(list(x)))))
+        
+        # Generar un ID único para el stint (match_id + start + period)
+        df_stints['stint_id'] = df_stints.apply(
+            lambda r: f"{r['match_id']}_{r['nperiod']}_{r['start'].replace(':', '')}", axis=1
+        )
        
-    return df_pbps, df_matches, df_teams, df_players, df_competitions
+    return df_stints, df_matches, df_teams, df_players, df_competitions

@@ -2,9 +2,13 @@ import os
 
 # Base paths with environment variable support for flexibility (Docker/Local)
 DATA_DIR = os.getenv("DATA_DIR", "./data")
-DB_PATH = os.getenv("DB_PATH", os.path.join(DATA_DIR, "database.db"))
 CABB_PATH = os.getenv("CABB_PATH", DATA_DIR)
 PINNACLE_PATH = os.getenv("PINNACLE_PATH", os.path.join(DATA_DIR, "pinnacle"))
+
+# S3 Configuration
+S3_BUCKET_NAME = os.getenv("S3_BUCKET_NAME")
+S3_RAW_PREFIX = os.getenv("S3_RAW_PREFIX", "raw")
+S3_CURATED_PREFIX = os.getenv("S3_CURATED_PREFIX", "curated")
 
 # Data Fixes and Mappings
 UNKNOWN_NAME_FIX = {

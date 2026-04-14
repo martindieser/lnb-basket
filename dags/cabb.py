@@ -14,7 +14,7 @@ from src.scrapers.cabb.scraper import CABBScraper
 from src.etl.extract import extract_dirs
 from src.etl.transform import transform_pbp_data
 from src.etl.load import load_data_to_db
-from src.config import DB_PATH, CABB_PATH 
+from src.config import CABB_PATH 
 
 logger = logging.getLogger(__name__)
 
@@ -77,8 +77,8 @@ def cabb_scraping_workflow():
         
         # --- A. ETL ---
         raw_data = extract_dirs(CABB_PATH)
-        pbps, matches, teams, players, comp = transform_pbp_data(raw_data)
-        load_data_to_db(pbps, matches, teams, players, comp, DB_PATH)
+        stints, matches, teams, players, comp = transform_pbp_data(raw_data)
+        load_data_to_db(stints, matches, teams, players, comp)
 
 
     # --- DAG FLOW ---

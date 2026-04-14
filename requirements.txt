@@ -3,3 +3,7 @@ rapidfuzz
 pandas
 numpy
 curl_cffi
+boto3
+s3fs
+pyarrow
+tqdm
