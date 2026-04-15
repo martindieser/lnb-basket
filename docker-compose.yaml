@@ -289,5 +289,16 @@ services:
     depends_on:
       <<: *airflow-common-depends-on
 
+  dashboard:
+    <<: *airflow-common
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - |
+        streamlit run src/app/main.py --server.port=8501 --server.address=0.0.0.0
+    ports:
+      - "8501:8501"
+    restart: always
+
 volumes:
   postgres-db-volume:

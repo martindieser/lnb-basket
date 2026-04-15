@@ -7,3 +7,6 @@ boto3
 s3fs
 pyarrow
 tqdm
+duckdb
+streamlit
+statsmodels
