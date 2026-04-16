@@ -83,6 +83,15 @@ def cabb_scraping_workflow():
         update_processed_registry(s3_client, new_keys)
         logger.info(f"Successfully processed {len(new_keys)} new files and updated registry.")
 
+    @task
+    def generate_predictions_task(upstream_status):
+        if upstream_status == "no_matches":
+            logger.info("Nothing new to predict.")
+            return
+        
+        from src.etl.predict import generate_predictions
+        generate_predictions()
+
     # --- DAG FLOW ---
     # Usamos macros de Airflow directamente en la llamada a las tareas
     selected_start = "{{ dag_run.conf.get('start_date', ds) }}"
@@ -95,6 +104,7 @@ def cabb_scraping_workflow():
         selected_start=selected_start,
         selected_end=selected_end,
     )
-    batch_processing(ref_date=selected_start, upstream_status=scraping_status)
+    batch_processing_status = batch_processing(ref_date=selected_start, upstream_status=scraping_status)
+    batch_processing_status >> generate_predictions_task(upstream_status=scraping_status)
 
 cabb_scraping_workflow()

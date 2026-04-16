@@ -6,8 +6,6 @@ from datetime import datetime
 from dataclasses import dataclass, field
 from rapidfuzz import process, fuzz
 
-
-
 from src.config import UNKNOWN_NAME_FIX
 from src.utils import (
     clean_text,
@@ -18,6 +16,7 @@ from src.utils import (
     create_team_id, 
     create_player_id
 )
+from src.stats.stints import process_events_to_stints
 
 @dataclass
 class RawBasketballData:
@@ -39,8 +38,6 @@ def _fix_player_name(player, UNKNOWN_NAME_FIX):
         return UNKNOWN_NAME_FIX[player_id]
     return clean_text(nombre)
 
-
-
 def get_pbp_df(lista_pbp_dfs, lookup_teams, lookup_matches, lookup_players):
     if not lista_pbp_dfs:
         return pd.DataFrame()
@@ -58,12 +55,10 @@ def get_pbp_df(lista_pbp_dfs, lookup_teams, lookup_matches, lookup_players):
         'zona' : 'zone',
         'informacion_adicional' : 'note',
     })
-
    
     for col in ['team_raw_id', 'player_raw_id']:
         df[col] = df[col].astype(str)
 
-    # Standardize types
     lookup_teams['raw_id'] = lookup_teams['raw_id'].astype(str)
     lookup_players['raw_id'] = lookup_players['raw_id'].astype(str)
     lookup_matches['raw_id'] = lookup_matches['raw_id'].astype(str)
@@ -74,11 +69,7 @@ def get_pbp_df(lista_pbp_dfs, lookup_teams, lookup_matches, lookup_players):
     mask = df['player_raw_id'].isin(lookup_players['raw_id'].unique())
     df.loc[~mask, 'player_raw_id'] = None
  
-
-    # --- TEAM MERGE ---
-    # Rename lookup column first to avoid 'raw_id' name collision
     teams_renamed = lookup_teams.rename(columns={'raw_id': 'team_raw_id'})
-    
     df = df.merge(
         teams_renamed[['team_raw_id', 'team_id']], 
         on='team_raw_id', 
@@ -86,65 +77,43 @@ def get_pbp_df(lista_pbp_dfs, lookup_teams, lookup_matches, lookup_players):
         how='left'
     ).drop(columns=['team_raw_id'])
 
-    # --- PLAYER MERGE ---
-    players_renamed = lookup_players.rename(columns={
-        'raw_id': 'player_raw_id', 
-    })
-    
+    players_renamed = lookup_players.rename(columns={'raw_id': 'player_raw_id'})
     df = df.merge(
         players_renamed[['player_raw_id', 'player_id']], 
         on='player_raw_id', 
         validate='m:1', 
         how='left'
     )
-
     assert df.loc[mask, 'player_id'].isna().sum() == 0 
     df = df.drop(columns=['player_raw_id'])
 
-    matches_renamed = lookup_matches.rename(columns={
-        'raw_id': 'match_raw_id'}
-    )
+    matches_renamed = lookup_matches.rename(columns={'raw_id': 'match_raw_id'})
     df = df.rename(columns={'raw_id': 'match_raw_id'}).merge(
         matches_renamed[['match_raw_id', 'match_id']], 
         on='match_raw_id', 
         validate='m:1', 
         how='left'
     )
-    
     assert df['match_raw_id'].isna().sum() == 0 
     df = df.drop(columns=['match_raw_id'])
 
     df['pbp_id'] = df.apply(create_pbp_uuid, axis=1)
     df = df.drop_duplicates(subset=['pbp_id'], keep='first')
-    # print(df[~df['team_id'].isna()])
-    # raise ValueError('adssads<')
     
     columns = ['seq', 'period', 'clk', 'event_type', 'jersey', 'x', 'y', 'zone', 
                'note', 'team_id', 'player_id', 'match_id', 'pbp_id']
-    
     return df[columns]
-
-
-
-
 
 def get_matches_df(matches, df_comp, lookup_teams):
     if not matches:
-        return pd.DataFrame()
+        return pd.DataFrame(), pd.DataFrame()
     
     df = pd.DataFrame(matches)
-    # df = df[(df['idlocal'] != 0) & (df['idlocal'].notna())].copy()
-    
     if df.empty:
-        return df
+        return df, pd.DataFrame()
     
     df['date'] = pd.to_datetime(df['raw_id'].apply(parse_match_datetime))
-
-    df = df.merge(df_comp[['comp_name', 'id_comp']],
-        on='comp_name',
-        how='left',
-        validate='m:1')
-
+    df = df.merge(df_comp[['comp_name', 'id_comp']], on='comp_name', how='left', validate='m:1')
     lookup_teams = lookup_teams.rename(columns = {'raw_id': 'team_raw_id'})
 
     df = df.merge(
@@ -179,20 +148,17 @@ def get_matches_df(matches, df_comp, lookup_teams):
 
     final_columns = ['match_id', 'home_id', 'away_id', 'id_comp', 'date', 'status',  
                      'home_pts', 'away_pts', 'periods', 'total_duration_mm', 'extra_duration_mm']
-
-    if ('periods' not in df.columns) \
-        and ('total_duration_mm' not in df.columns) \
-        and ('extra_duration_mm' not in df.columns):
-
-        df['periods'] = 4
-        df['total_duration_mm'] = 10
-        df['extra_duration_mm'] = 5
-        
+    
+    # Fill defaults if columns are missing
+    for col in ['periods', 'total_duration_mm', 'extra_duration_mm']:
+        if col not in df.columns:
+            df[col] = 4 if col == 'periods' else (10 if col == 'total_duration_mm' else 5)
+            
     return df[final_columns], df[['match_id', 'raw_id']].copy()
 
 def get_teams_df(raw_teams):
     if not raw_teams:
-        return pd.DataFrame()
+        return pd.DataFrame(), pd.DataFrame()
     
     df = pd.DataFrame(raw_teams)
     df['raw_id'] = df['team_id']
@@ -200,7 +166,7 @@ def get_teams_df(raw_teams):
     df['team_id'] = df['team_name'].apply(create_team_id)
     lookup = df[['team_id', 'raw_id']].drop_duplicates(subset=['raw_id'], keep='first')
     df_final = df.drop_duplicates(subset=['team_id'], keep='first')[['team_id', 'team_name']]
-    return df.drop(columns=['raw_id']), lookup
+    return df_final, lookup
 
 def get_players_df(raw_players, threshold=95):
     if not raw_players:
@@ -223,7 +189,6 @@ def get_players_df(raw_players, threshold=95):
         
         G = nx.Graph()
         G.add_nodes_from(unique_names)
-        
         for i, name in enumerate(unique_names):
             matches = process.extract(name, unique_names[i+1:], scorer=fuzz.token_set_ratio, score_cutoff=threshold)
             for match in matches:
@@ -250,58 +215,45 @@ def get_players_df(raw_players, threshold=95):
 def get_competitions_df(raw_competitions) -> pd.DataFrame:
     if len(raw_competitions) == 0:
         return pd.DataFrame()
-
     df = pd.DataFrame(raw_competitions)
     df['id_comp'] = df['comp_name'].apply(create_competition_id)
     df = df.drop_duplicates(subset=['id_comp'], keep='first')
     return df
 
-
-
-def parse_payload_to_raw(payload: list) -> RawBasketballData:
+def parse_payload_to_raw(payload: dict) -> RawBasketballData:
     raw_storage = RawBasketballData()
     teams = {}
     
-    # Helper para limpiar IDs: convierte a string, quita espacios y decimales
     def clean_id(val):
         if val is None: return None
-        s = str(val).strip().replace('.0', '') # "105.0" -> "105"
+        s = str(val).strip().replace('.0', '')
         return s if s not in ['0', '', 'nan', 'None'] else None
 
-    entry = {}
     for comp_name in payload:
-        entry['competition'] = comp_name
         raw_storage.competitions.append({'comp_name': comp_name})
         comp_payload = payload[comp_name]
-        entry['data'] = [(game, comp_payload[game]['pbp']) for game in comp_payload]
-        for filename, pbp in entry['data']:
+        for filename in comp_payload:
+            pbp = comp_payload[filename].get('pbp', {})
             if pbp.get('error') == 'sin datos':
                 continue
 
-            # 1. Match Info
             match_info = pbp.get('partido', {}).copy()
             match_info['raw_id'] = filename
             match_info['comp_name'] = comp_name
             
-            # --- CORRECCIÓN 1: Limpieza inmediata de IDs ---
             raw_id_local = clean_id(match_info.get('idlocal'))
             raw_id_visit = clean_id(match_info.get('idvisitante'))
-            
-            # Actualizamos el match_info con los IDs limpios (o None si eran '0')
             match_info['idlocal'] = raw_id_local
             match_info['idvisitante'] = raw_id_visit
-
             raw_storage.matches.append(match_info)
 
-            # --- CORRECCIÓN 2: Solo agregar a 'teams' si el ID es válido ---
             if raw_id_local: 
                 if raw_id_local not in teams:
                     teams[raw_id_local] = {
-                        'team_id': raw_id_local, # Ahora es string seguro
+                        'team_id': raw_id_local,
                         'team_name': str(match_info['local']).strip(),
-                        'raw_id': raw_id_local # Agregado para consistencia con tu merge anterior
+                        'raw_id': raw_id_local
                     }
-            
             if raw_id_visit:
                 if raw_id_visit not in teams:
                     teams[raw_id_visit] = {
@@ -310,78 +262,42 @@ def parse_payload_to_raw(payload: list) -> RawBasketballData:
                         'raw_id': raw_id_visit
                     }
 
-            # 2. PBP Events
             acciones = pbp.get('envivo', {}).get('historialacciones', [])
             for action in acciones:
                 action['raw_id'] = filename
                 raw_storage.pbp_events.append(action)
 
-            # 3. Players
             jug_ott = pbp.get('EnVivoJugadoresOTT', {})
             raw_storage.players.extend(jug_ott.get('JugadoresEnVivoLocal', []))
             raw_storage.players.extend(jug_ott.get('JugadoresEnVivoVisitante', []))
 
-
-    # --- CORRECCIÓN 3: Lógica de Backfill mejorada ---
-    
-    # Mapa de Nombres -> IDs (solo de los que pudimos capturar bien)
-    team_name_to_id = {
-        t['team_name']: t['team_id'] 
-        for t in teams.values()
-    }
+    team_name_to_id = {t['team_name']: t['team_id'] for t in teams.values()}
 
     for mat in raw_storage.matches:
-        # Chequeamos LOCAL
-        if not mat.get('idlocal'): # Si es None o vacío
+        if not mat.get('idlocal'):
             nlocal = str(mat.get('local')).strip()
             if nlocal in team_name_to_id:
                 mat['idlocal'] = team_name_to_id[nlocal]
-                # logging.info(f"Fixed Local ID for {nlocal} in match {mat['raw_id']}")
             else:
-                # Creamos un ID crudo falso para no romper el merge
                 fake_raw_id = f"UNKNOWN_LOCAL_{create_team_id(nlocal)[:8]}"
                 mat['idlocal'] = fake_raw_id
-                teams[fake_raw_id] = {
-                    'team_id': fake_raw_id,
-                    'team_name': nlocal,
-                    'raw_id': fake_raw_id
-                }
+                teams[fake_raw_id] = {'team_id': fake_raw_id, 'team_name': nlocal, 'raw_id': fake_raw_id}
                 team_name_to_id[nlocal] = fake_raw_id
                 logging.warning(f"Generando ID provisorio {fake_raw_id} para Local '{nlocal}' en {mat['raw_id']}")
 
-        # Chequeamos VISITANTE (Independiente del local!)
-        if not mat.get('idvisitante'): # Si es None o vacío
+        if not mat.get('idvisitante'):
             nvisitante = str(mat.get('visitante')).strip()
             if nvisitante in team_name_to_id:
                 mat['idvisitante'] = team_name_to_id[nvisitante]
-                # logging.info(f"Fixed Away ID for {nvisitante} in match {mat['raw_id']}")
             else:
-                # Creamos un ID crudo falso para no romper el merge
                 fake_raw_id = f"UNKNOWN_AWAY_{create_team_id(nvisitante)[:8]}"
                 mat['idvisitante'] = fake_raw_id
-                teams[fake_raw_id] = {
-                    'team_id': fake_raw_id,
-                    'team_name': nvisitante,
-                    'raw_id': fake_raw_id
-                }
+                teams[fake_raw_id] = {'team_id': fake_raw_id, 'team_name': nvisitante, 'raw_id': fake_raw_id}
                 team_name_to_id[nvisitante] = fake_raw_id
                 logging.warning(f"Generando ID provisorio {fake_raw_id} para Visitante '{nvisitante}' en {mat['raw_id']}")
 
-    
-    # Convertir diccionario a lista para el output
-    # Aseguramos que teams_raw_id esté presente ya que lo usas en el merge
-    raw_storage.teams = []
-    for t_id, t_data in teams.items():
-        # Nos aseguramos que raw_id exista para el merge posterior
-        if 'raw_id' not in t_data:
-             t_data['raw_id'] = t_id
-        raw_storage.teams.append(t_data)
-
+    raw_storage.teams = list(teams.values())
     return raw_storage
-
-
-
-from src.stats.stints import process_events_to_stints
 
 def transform_pbp_data(payload):
     parsed_entities = parse_payload_to_raw(payload)
@@ -393,27 +309,17 @@ def transform_pbp_data(payload):
 
     assert len(df_matches) == len(parsed_entities.matches), f"{len(df_matches)} != {len(parsed_entities.matches)}"
     
-    df_pbps = get_pbp_df(
-        parsed_entities.pbp_events,
-        lookup_teams, 
-        lookup_matches,
-        lookup_players
-    )
+    df_pbps = get_pbp_df(parsed_entities.pbp_events, lookup_teams, lookup_matches, lookup_players)
 
-    # --- Generación de Stints ---
     if df_pbps.empty:
         return pd.DataFrame(), df_matches, df_teams, df_players, df_competitions
 
-    print_msg = "Generating Stints from Play-by-Play data..."
-    logging.info(print_msg)
+    logging.info("Generating Stints from Play-by-Play data...")
     df_stints, _ = process_events_to_stints(df_matches, df_pbps)
 
     if not df_stints.empty:
-        # Serializar alineaciones (sets -> strings) para compatibilidad con Parquet
         df_stints['home_lineup'] = df_stints['home_lineup'].apply(lambda x: ",".join(map(str, sorted(list(x)))))
         df_stints['away_lineup'] = df_stints['away_lineup'].apply(lambda x: ",".join(map(str, sorted(list(x)))))
-        
-        # Generar un ID único para el stint (match_id + start + period)
         df_stints['stint_id'] = df_stints.apply(
             lambda r: f"{r['match_id']}_{r['nperiod']}_{r['start'].replace(':', '')}", axis=1
         )

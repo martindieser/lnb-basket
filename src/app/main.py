@@ -2,11 +2,11 @@ import streamlit as st
 import duckdb
 import pandas as pd
 import os
-from src.stats.elo import calculate_elo_ratings, train_prediction_model, predict_upcoming
+import json
 
 # Configure page
 st.set_page_config(page_title="Predicciones LNB", layout="wide")
-st.title("LNB Basket: Predicciones y Ratings Elo")
+st.title("LNB Basket: Predicciones")
 
 # S3 Configuration from environment
 S3_BUCKET = os.getenv("S3_BUCKET_NAME")
@@ -33,75 +33,91 @@ def get_duckdb_conn():
 def load_data():
     if not S3_BUCKET:
         st.error("S3_BUCKET_NAME no configurado en variables de entorno.")
-        return None, None, None
+        return None, None, None, None
 
     conn = get_duckdb_conn()
     
     try:
         # Define S3 paths
-        matches_path = f"s3://{S3_BUCKET}/{S3_CURATED}/matches/data.parquet"
         upcoming_path = f"s3://{S3_BUCKET}/{S3_CURATED}/upcoming_matches/data.parquet"
         teams_path = f"s3://{S3_BUCKET}/{S3_CURATED}/teams/data.parquet"
+        predictions_path = f"s3://{S3_BUCKET}/{S3_CURATED}/predictions/data.parquet"
+        leaderboard_path = f"s3://{S3_BUCKET}/{S3_CURATED}/leaderboard/data.parquet"
         
         # Load dataframes using DuckDB
-        df_matches = conn.execute(f"SELECT * FROM read_parquet('{matches_path}') ORDER BY date").df()
         df_upcoming = conn.execute(f"SELECT * FROM read_parquet('{upcoming_path}')").df()
         df_teams = conn.execute(f"SELECT * FROM read_parquet('{teams_path}')").df()
+        df_preds = conn.execute(f"SELECT * FROM read_parquet('{predictions_path}')").df()
+        df_leaderboard = conn.execute(f"SELECT * FROM read_parquet('{leaderboard_path}')").df()
         
-        return df_matches, df_upcoming, df_teams
+        return df_upcoming, df_teams, df_preds, df_leaderboard
     except Exception as e:
         st.error(f"Error cargando datos de S3: {e}")
-        return None, None, None
+        return None, None, None, None
 
-df_matches, df_upcoming, df_teams = load_data()
+df_upcoming, df_teams, df_preds, df_leaderboard = load_data()
 
-if df_matches is not None and df_teams is not None:
-    # 1. Calculate Elo ratings
-    elo_ratings, elo_history = calculate_elo_ratings(df_matches)
-    model = train_prediction_model(elo_history)
-    
-    # 2. Sidebar: Leaderboard
-    st.sidebar.header("Ranking Elo")
+if df_preds is not None and df_teams is not None:
+    # 1. Sidebar: Leaderboard
+    st.sidebar.header("Ranking Elo (Actualizado)")
     team_names = df_teams.set_index('team_id')['team_name'].to_dict()
     
-    leaderboard_data = [
-        {"Equipo": team_names.get(tid, tid), "Elo": round(elo, 1)}
-        for tid, elo in elo_ratings.items()
-    ]
-    df_leaderboard = pd.DataFrame(leaderboard_data).sort_values("Elo", ascending=False).reset_index(drop=True)
-    st.sidebar.table(df_leaderboard)
+    display_leaderboard = df_leaderboard.copy()
+    display_leaderboard = display_leaderboard.rename(columns={
+        'team_name': 'Equipo',
+        'elo': 'Elo'
+    })
+    st.sidebar.table(display_leaderboard[['Equipo', 'Elo']])
     
-    # 3. Main Dashboard: Upcoming Predictions
+    # 2. Main Dashboard: Upcoming Predictions
     st.header("Próximos Partidos y Predicciones")
     
-    if df_upcoming is not None and not df_upcoming.empty:
-        preds = predict_upcoming(df_upcoming, elo_ratings, model)
+    # Model Selection (Future proofing)
+    available_models = df_preds['model_name'].unique().tolist()
+    selected_model = st.selectbox("Seleccionar Modelo de Predicción", available_models, index=0)
+    
+    filtered_preds = df_preds[df_preds['model_name'] == selected_model].copy()
+    
+    if not filtered_preds.empty:
+        # Join with team names and upcoming info
+        upcoming_info = df_upcoming[['match_id', 'date', 'home_id', 'away_id']]
+        display_df = filtered_preds.merge(upcoming_info, on='match_id')
         
-        # Join with team names and prepare display
-        display_df = preds.copy()
         display_df['Local'] = display_df['home_id'].map(team_names)
         display_df['Visitante'] = display_df['away_id'].map(team_names)
         
-        # Add date and status from original upcoming_matches
-        upcoming_info = df_upcoming[['match_id', 'date', 'status']]
-        display_df = display_df.merge(upcoming_info, on='match_id')
+        # Extract metadata if available
+        if 'metadata' in display_df.columns:
+            meta_df = display_df['metadata'].apply(lambda x: json.loads(x) if isinstance(x, str) else x).apply(pd.Series)
+            display_df = pd.concat([display_df, meta_df], axis=1)
         
-        # Final columns for display
-        final_display = display_df[[
-            'date', 'Local', 'Visitante', 'elo_home', 'elo_away', 
-            'pred_diff_pts', 'pred_winner'
-        ]].copy()
+        # Prepare final columns for display
+        cols_to_show = ['date', 'Local', 'Visitante']
         
-        final_display = final_display.rename(columns={
+        # Model specific columns from metadata
+        if 'elo_home' in display_df.columns and 'elo_away' in display_df.columns:
+            cols_to_show += ['elo_home', 'elo_away']
+            
+        cols_to_show += ['pred_diff_pts', 'pred_winner']
+        
+        final_display = display_df[cols_to_show].copy()
+        
+        # Rename for UI
+        rename_dict = {
             'date': 'Fecha',
-            'elo_home': 'Elo Local',
-            'elo_away': 'Elo Visitante',
             'pred_diff_pts': 'Dif. Puntos Pred.',
-            'pred_winner': 'Ganador Pred.'
-        })
+            'pred_winner': 'Ganador Pred.',
+            'elo_home': 'Elo Local',
+            'elo_away': 'Elo Visitante'
+        }
+        final_display = final_display.rename(columns=rename_dict)
         
-        final_display['Elo Local'] = final_display['Elo Local'].round(1)
-        final_display['Elo Visitante'] = final_display['Elo Visitante'].round(1)
+        # Formatting
+        if 'Elo Local' in final_display.columns:
+            final_display['Elo Local'] = final_display['Elo Local'].round(1)
+        if 'Elo Visitante' in final_display.columns:
+            final_display['Elo Visitante'] = final_display['Elo Visitante'].round(1)
+        
         final_display['Dif. Puntos Pred.'] = final_display['Dif. Puntos Pred.'].round(2)
         
         # Sort by date
@@ -109,16 +125,10 @@ if df_matches is not None and df_teams is not None:
         
         st.dataframe(final_display, use_container_width=True)
         
-        st.info("Interpretación: `Dif. Puntos Pred.` > 0 favorece al equipo LOCAL. El Elo incluye una ventaja de local de 100 puntos.")
+        if selected_model == 'elo_base':
+            st.info("Interpretación: `Dif. Puntos Pred.` > 0 favorece al equipo LOCAL. El Elo incluye una ventaja de local de 100 puntos.")
     else:
-        st.write("No se encontraron partidos próximos.")
-    
-    # 4. Optional: Model Summary
-    if st.checkbox("Mostrar detalles del modelo (OLS)"):
-        if model:
-            st.text(model.summary())
-        else:
-            st.write("Modelo no entrenado (usando coeficientes por defecto).")
+        st.write("No se encontraron predicciones próximas para el modelo seleccionado.")
             
 else:
-    st.info("Esperando datos de S3...")
+    st.info("Esperando datos de S3 (predicciones y leaderboard)...")
