@@ -5,59 +5,75 @@ import logging
 from datetime import datetime, timedelta
 from src.config import S3_BUCKET_NAME, S3_CURATED_PREFIX
 
-def write_to_s3_parquet(df, entity_name, pk_columns=None):
+logger = logging.getLogger(__name__)
+
+def write_to_s3_parquet(df, entity_name, pk_columns=None, upsert=True):
     """
-    Writes a DataFrame to S3 as a single Parquet file, overwriting if exists.
-    Raises exception if upload fails.
+    Writes a DataFrame to S3 as a single Parquet file.
+    If upsert=True, it merges with existing data. If False, it overwrites.
+    Returns: Final count of records saved.
     """
     if not S3_BUCKET_NAME or df.empty:
-        return
+        return 0
 
     s3_path = f"s3://{S3_BUCKET_NAME}/{S3_CURATED_PREFIX}/{entity_name}/data.parquet"
     
-    # Internal cleanup of duplicates before writing
+    # 1. Attempt to load existing data for Upsert
+    if upsert:
+        try:
+            existing_df = pd.read_parquet(s3_path, engine='pyarrow')
+            df = pd.concat([existing_df, df], ignore_index=True)
+        except Exception:
+            # File doesn't exist, proceed with current df
+            pass
+
+    # 2. Cleanup of duplicates before writing
     if pk_columns:
         df = df.drop_duplicates(subset=pk_columns, keep='last')
         
     try:
         df.to_parquet(s3_path, index=False, engine='pyarrow')
-        print(f"Saved {entity_name} to S3.")
+        return len(df)
     except Exception as e:
-        print(f"CRITICAL ERROR: Failed to upload {entity_name} to S3: {e}")
+        logger.error(f"CRITICAL ERROR: Failed to upload {entity_name} to S3: {e}")
         raise
 
 def load_data_to_db(stints, matches, teams, players, competitions, DB_PATH=None):
     """
     Saves the data to S3 Curated zone in single files. 
-    If any upload fails, the pipeline will stop.
     """
+    stats = {}
     try:
-        # --- 1. Global Entities ---
-        write_to_s3_parquet(teams, 'teams', pk_columns=['team_id'])
-        write_to_s3_parquet(players, 'players', pk_columns=['player_id'])
-        write_to_s3_parquet(competitions, 'competitions', pk_columns=['id_comp'])
+        # --- 1. Global Entities (Upsert) ---
+        stats['teams'] = write_to_s3_parquet(teams, 'teams', pk_columns=['team_id'], upsert=True)
+        stats['players'] = write_to_s3_parquet(players, 'players', pk_columns=['player_id'], upsert=True)
+        stats['competitions'] = write_to_s3_parquet(competitions, 'competitions', pk_columns=['id_comp'], upsert=True)
 
         # --- 2. Matches Processing ---
         if not matches.empty:
             upcoming_matches = matches[matches['status'] == 'NO_COMENZADO'].copy()
             played_matches = matches[matches['status'] != 'NO_COMENZADO'].copy()
 
-            # Save Upcoming Matches
-            print("Saving Upcoming Matches to S3...")
-            write_to_s3_parquet(upcoming_matches, 'upcoming_matches', pk_columns=['match_id'])
+            # Save Upcoming Matches (STRICT OVERWRITE)
+            stats['upcoming_matches'] = write_to_s3_parquet(upcoming_matches, 'upcoming_matches', pk_columns=['match_id'], upsert=False)
 
-            # Save Played Matches (as a single file)
+            # Save Played Matches (Upsert)
             if not played_matches.empty:
-                print("Saving Played Matches to S3...")
-                write_to_s3_parquet(played_matches, 'matches', pk_columns=['match_id'])
+                stats['matches'] = write_to_s3_parquet(played_matches, 'matches', pk_columns=['match_id'], upsert=True)
 
-        # --- 3. Stints Processing (as a single file) ---
-        print("Saving Stints to S3...")
-        write_to_s3_parquet(stints, 'stints', pk_columns=['stint_id'])
+        # --- 3. Stints Processing (Upsert) ---
+        stats['stints'] = write_to_s3_parquet(stints, 'stints', pk_columns=['stint_id'], upsert=True)
 
-        print("EXITO: Zona Curated actualizada correctamente en S3.")
+        # --- Final Summary ---
+        logger.info("="*40)
+        logger.info("S3 CURATED ZONE UPDATE SUMMARY")
+        logger.info("="*40)
+        for entity, count in stats.items():
+            mode = "Overwrite" if entity == 'upcoming_matches' else "Upsert (Total)"
+            logger.info(f"- {entity.capitalize():<18}: {count:>6} records [{mode}]")
+        logger.info("="*40)
+        logger.info("EXITO: Zona Curated actualizada correctamente en S3.")
 
     except Exception as e:
-        # Re-raise the exception to ensure the pipeline stops
-        print("PIPELINE STOPPED DUE TO S3 UPLOAD ERROR.")
+        logger.error(f"PIPELINE STOPPED DUE TO S3 UPLOAD ERROR: {e}")
         raise

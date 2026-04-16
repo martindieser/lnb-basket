@@ -1,6 +1,9 @@
 import pandas as pd
+import logging
 from collections import defaultdict
 from tqdm import tqdm
+
+logger = logging.getLogger(__name__)
 
 class StintParser:
     # Definimos las columnas base
@@ -271,7 +274,7 @@ def process_events_to_stints(matches, events):
             all_boxscores.append(boxscore_df)
             
         except Exception as e:
-            print(f"Error on match {m_id}: {e}")
+            logger.error(f"Error on match {m_id}: {e}")
             # Quité el break para que si falla un partido siga con el resto
             continue 
 

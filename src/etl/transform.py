@@ -179,7 +179,15 @@ def get_matches_df(matches, df_comp, lookup_teams):
 
     final_columns = ['match_id', 'home_id', 'away_id', 'id_comp', 'date', 'status',  
                      'home_pts', 'away_pts', 'periods', 'total_duration_mm', 'extra_duration_mm']
-    
+
+    if ('periods' not in df.columns) \
+        and ('total_duration_mm' not in df.columns) \
+        and ('extra_duration_mm' not in df.columns):
+
+        df['periods'] = 4
+        df['total_duration_mm'] = 10
+        df['extra_duration_mm'] = 5
+        
     return df[final_columns], df[['match_id', 'raw_id']].copy()
 
 def get_teams_df(raw_teams):
@@ -196,7 +204,7 @@ def get_teams_df(raw_teams):
 
 def get_players_df(raw_players, threshold=95):
     if not raw_players:
-        return pd.DataFrame()
+        return pd.DataFrame(), pd.DataFrame()
 
     df = pd.DataFrame(raw_players) \
         .rename(columns={'IdJugador': 'player_id', 'Nombre': 'player_name'}) \
@@ -396,7 +404,8 @@ def transform_pbp_data(payload):
     if df_pbps.empty:
         return pd.DataFrame(), df_matches, df_teams, df_players, df_competitions
 
-    print("Generating Stints from Play-by-Play data...")
+    print_msg = "Generating Stints from Play-by-Play data..."
+    logging.info(print_msg)
     df_stints, _ = process_events_to_stints(df_matches, df_pbps)
 
     if not df_stints.empty:
