@@ -90,7 +90,8 @@ def extract_from_s3() -> tuple:
                 
             for obj in page['Contents']:
                 key = obj['Key']
-                if not key.endswith('.json') or key == REGISTRY_KEY:
+                # Skip registry, non-json files, and the profiles folder
+                if not key.endswith('.json') or key == REGISTRY_KEY or f"/{S3_RAW_PREFIX}/profiles/" in f"/{key}":
                     continue
                 
                 if key in processed_keys:
