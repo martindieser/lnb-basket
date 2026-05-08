@@ -1,1 +1,1 @@
-modify docker image to not install package on it
+- [x] modify docker image to not install package on it (Done during Prefect migration)

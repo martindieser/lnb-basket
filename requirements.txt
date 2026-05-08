@@ -1,3 +1,4 @@
+python-dotenv
 networkx
 rapidfuzz
 pandas
@@ -6,7 +7,8 @@ curl_cffi
 boto3
 s3fs
 pyarrow
-tqdm
 duckdb
 streamlit
 statsmodels
+tqdm
+prefect>=3.0.0

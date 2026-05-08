@@ -10,7 +10,7 @@ from src.config import S3_BUCKET_NAME, S3_RAW_PREFIX
 S3_STATE_PREFIX = f"{S3_RAW_PREFIX}/_state"
 REGISTRY_KEY = f"{S3_STATE_PREFIX}/processed_keys.json"
 
-def extract_dirs(base_directory: str = None) -> tuple:
+def extract_dirs() -> tuple:
     """
     Scans S3 and organizes data by competition and match_id.
     Only returns data for files NOT already processed.
