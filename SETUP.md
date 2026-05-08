@@ -13,16 +13,22 @@ Para que el despliegue automático funcione, ve a tu repositorio en GitHub: **Se
 
 ## 2. Configuración de Prefect Cloud
 
-El flujo se ejecuta en la infraestructura administrada de Prefect. Necesita permisos para clonar el código y para escribir en S3.
+### A. Crear el Work Pool (Infraestructura)
+Antes del primer despliegue, debes crear el lugar donde correrá el código:
+1. En Prefect Cloud, ve a **Work Pools**.
+2. Haz clic en **Create Work Pool**.
+3. Selecciona el tipo **Prefect Managed**.
+4. Nombre del pool: `default-managed`.
+5. Haz clic en **Create**.
 
-### A. Bloques (Blocks) - Acceso al Repositorio
+### B. Bloques (Blocks) - Acceso al Repositorio
 Para clonar tu repositorio privado:
 1. En Prefect Cloud, ve a **Blocks** > **+ Add Block**.
 2. Selecciona **Secret**.
 3. **Block Name:** `github-token`
 4. **Value:** Tu GitHub Personal Access Token (PAT) con permisos de lectura.
 
-### B. Variables - Configuración de la App
+### C. Variables - Configuración de la App
 Ve a **Variables** en el menú lateral y agrega las siguientes para que el flujo las use en tiempo de ejecución:
 
 | Variable | Valor sugerido / Ejemplo |

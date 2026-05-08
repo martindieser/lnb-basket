@@ -11,4 +11,3 @@ duckdb
 streamlit
 statsmodels
 tqdm
-prefect
