@@ -13,8 +13,9 @@ push: null
 # pull section allows you to manage and coordinate how your deployment code is retrieved
 pull:
 - prefect.deployments.steps.git_clone:
-    repository: https://github.com/martindieser/lnb-basket.git # I should verify the repo URL if possible or use a placeholder
+    repository: https://github.com/md1eser/lnb-basket.git
     branch: migrate-to-prefect
+    access_token: "{{ prefect.blocks.secret.github-token }}" # This references a Secret block in Prefect Cloud
 
 # deployment section allows you to manage and coordinate your deployments
 deployments:
