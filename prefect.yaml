@@ -1,0 +1,34 @@
+# Welcome to your prefect.yaml file! You can use this file for managing your project and deployments.
+
+# Generic metadata about this project
+name: lnb-basket
+prefect-version: 3.0.0
+
+# build section allows you to manage and coordinate how your deployment code is packaged
+build: null
+
+# push section allows you to manage and coordinate how your deployment code is uploaded
+push: null
+
+# pull section allows you to manage and coordinate how your deployment code is retrieved
+pull:
+- prefect.deployments.steps.git_clone:
+    repository: https://github.com/martindieser/lnb-basket.git # I should verify the repo URL if possible or use a placeholder
+    branch: migrate-to-prefect
+
+# deployment section allows you to manage and coordinate your deployments
+deployments:
+- name: daily-cabb-etl
+  version: null
+  tags: []
+  description: "Daily CABB Scraping and ETL workflow"
+  schedule:
+    cron: "0 0 * * *"
+    timezone: "UTC"
+  entrypoint: "src/flows/cabb.py:cabb_scraping_workflow"
+  parameters: {}
+  work_pool:
+    name: default-managed
+    work_queue_name: null
+    job_variables:
+      pip_install_requirements: true
