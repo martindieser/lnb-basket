@@ -1,7 +1,8 @@
-# 1. Imagen base de Airflow
-FROM apache/airflow:3.1.6-python3.11
+# 1. Imagen base de Python ligera
+FROM python:3.11-slim
 
-USER root
+# Directorio de trabajo
+WORKDIR /app
 
 # 2. Utilidades del sistema
 RUN apt-get update && apt-get install -y \
@@ -12,14 +13,19 @@ RUN apt-get update && apt-get install -y \
     openssl \
     && apt-get clean
 
-USER airflow
-
 # 3. Instalación de dependencias
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # 4. Código del proyecto
-COPY --chown=airflow:root . /opt/airflow/project
-RUN pip install --no-cache-dir /opt/airflow/project
+COPY . .
+# Se evita instalar el paquete local siguiendo las indicaciones del TODO.md
 
-ENV PYTHONPATH="/opt/airflow/project/src"
+# Variables de entorno
+# Establecemos PYTHONPATH en /app para que las importaciones 'from src.xxx' funcionen correctamente
+ENV PYTHONPATH="/app"
+ENV PYTHONUNBUFFERED=1
+
+# Comando por defecto: Iniciar un worker de Prefect
+# Nota: Requiere configurar PREFECT_API_URL y PREFECT_API_KEY en el entorno
+CMD ["prefect", "worker", "start", "--pool", "default-agent-pool"]

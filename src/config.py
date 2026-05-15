@@ -1,9 +1,13 @@
 import os
+from dotenv import load_dotenv
+from pathlib import Path
+
+env_path = Path(__file__).resolve().parent.parent.parent / ".env"
+load_dotenv(env_path)
 
 # Base paths with environment variable support for flexibility (Docker/Local)
 DATA_DIR = os.getenv("DATA_DIR", "./data")
 CABB_PATH = os.getenv("CABB_PATH", DATA_DIR)
-PINNACLE_PATH = os.getenv("PINNACLE_PATH", os.path.join(DATA_DIR, "pinnacle"))
 
 # S3 Configuration
 S3_BUCKET_NAME = os.getenv("S3_BUCKET_NAME")

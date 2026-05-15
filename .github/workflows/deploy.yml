@@ -1,0 +1,49 @@
+name: Deploy to Prefect Cloud
+on:
+  push:
+    branches:
+      - migrate-to-prefect
+  workflow_dispatch:
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      - name: Install Prefect
+        run: |
+          python -m pip install --upgrade pip
+          pip install prefect>=3.0.0
+      - name: Create Prefect Secret Blocks
+        env:
+          GIT_TOKEN: ${{ secrets.GIT_TOKEN}}
+          PREFECT_API_KEY: ${{ secrets.PREFECT_API_KEY }}
+          PREFECT_API_URL: ${{ secrets.PREFECT_API_URL }}
+          S3_BUCKET_NAME: ${{ secrets.S3_BUCKET_NAME }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+          S3_RAW_PREFIX: ${{ secrets.S3_RAW_PREFIX }}
+          S3_CURATED_PREFIX: ${{ secrets.S3_CURATED_PREFIX }}
+        run: |
+          python -c "
+          from prefect.blocks.system import Secret
+          import os
+          Secret(value=os.environ['GIT_TOKEN']).save('github-token', overwrite=True)
+          Secret(value=os.environ['S3_BUCKET_NAME']).save('s3-bucket-name', overwrite=True)
+          Secret(value=os.environ['AWS_ACCESS_KEY_ID']).save('aws-access-key-id', overwrite=True)
+          Secret(value=os.environ['AWS_SECRET_ACCESS_KEY']).save('aws-secret-access-key', overwrite=True)
+          Secret(value=os.environ['AWS_REGION']).save('aws-region', overwrite=True)
+          Secret(value=os.environ['S3_RAW_PREFIX']).save('s3-raw-prefix', overwrite=True)
+          Secret(value=os.environ['S3_CURATED_PREFIX']).save('s3-curated-prefix', overwrite=True)
+          print('Secret blocks created/updated successfully')
+          "
+      - name: Prefect Deploy
+        env:
+          PREFECT_API_KEY: ${{ secrets.PREFECT_API_KEY }}
+          PREFECT_API_URL: ${{ secrets.PREFECT_API_URL }}
+        run: prefect deploy --all

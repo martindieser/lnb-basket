@@ -1,0 +1,41 @@
+# Welcome to your prefect.yaml file! You can use this file for managing your project and deployments.
+# Generic metadata about this project
+name: lnb-basket
+prefect-version: 3.0.0
+# build section allows you to manage and coordinate how your deployment code is packaged
+build: null
+# push section allows you to manage and coordinate how your deployment code is uploaded
+push: null
+# pull section allows you to manage and coordinate how your deployment code is retrieved
+pull:
+- prefect.deployments.steps.git_clone:
+    id: clone_step
+    repository: https://github.com/md1eser/lnb-basket.git
+    branch: migrate-to-prefect
+    access_token: "{{ prefect.blocks.secret.github-token }}"
+- prefect.deployments.steps.run_shell_script:
+    script: pip install -r prefect_requirements.txt
+    directory: "{{ clone_step.directory }}"
+# deployment section allows you to manage and coordinate your deployments
+deployments:
+- name: daily-cabb-etl
+  version: null
+  tags: []
+  description: "Daily CABB Scraping and ETL workflow"
+  schedule:
+    cron: "0 0 * * *"
+    timezone: "UTC"
+  entrypoint: "src/flows/cabb.py:cabb_scraping_workflow"
+  parameters: {}
+  work_pool:
+    name: default-managed
+    work_queue_name: null
+    job_variables:
+      pip_install_requirements: true
+      env:
+        S3_BUCKET_NAME: "{{ prefect.blocks.secret.s3-bucket-name }}"
+        AWS_ACCESS_KEY_ID: "{{ prefect.blocks.secret.aws-access-key-id }}"
+        AWS_SECRET_ACCESS_KEY: "{{ prefect.blocks.secret.aws-secret-access-key }}"
+        AWS_REGION: "{{ prefect.blocks.secret.aws-region }}"
+        S3_RAW_PREFIX: "{{ prefect.blocks.secret.s3-raw-prefix }}"
+        S3_CURATED_PREFIX: "{{ prefect.blocks.secret.s3-curated-prefix }}"
