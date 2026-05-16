@@ -75,8 +75,8 @@ def batch_processing(ref_date, upstream_status):
         return
 
     # Transformación y Carga (con Upsert para no perder historial)
-    stints, matches, teams, players, comp = transform_pbp_data(raw_data)
-    load_data_to_db(stints, matches, teams, players, comp)
+    pbps, matches, teams, players, comp = transform_pbp_data(raw_data)
+    load_data_to_db(pbps, matches, teams, players, comp)
 
     # Registro de archivos procesados exitosamente
     s3_client = boto3.client('s3')

@@ -38,7 +38,7 @@ def write_to_s3_parquet(df, entity_name, pk_columns=None, upsert=True):
         logger.error(f"CRITICAL ERROR: Failed to upload {entity_name} to S3: {e}")
         raise
 
-def load_data_to_db(stints, matches, teams, players, competitions, DB_PATH=None):
+def load_data_to_db(pbps, matches, teams, players, competitions, DB_PATH=None):
     """
     Saves the data to S3 Curated zone in single files. 
     """
@@ -61,8 +61,8 @@ def load_data_to_db(stints, matches, teams, players, competitions, DB_PATH=None)
             if not played_matches.empty:
                 stats['matches'] = write_to_s3_parquet(played_matches, 'matches', pk_columns=['match_id'], upsert=True)
 
-        # --- 3. Stints Processing (Upsert) ---
-        stats['stints'] = write_to_s3_parquet(stints, 'stints', pk_columns=['stint_id'], upsert=True)
+        # --- 3. PBPs Processing (Upsert) ---
+        stats['pbps'] = write_to_s3_parquet(pbps, 'pbps', pk_columns=['pbp_id'], upsert=True)
 
         # --- Final Summary ---
         logger.info("="*40)

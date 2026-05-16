@@ -16,7 +16,6 @@ from src.utils import (
     create_team_id, 
     create_player_id
 )
-from src.stats.stints import process_events_to_stints
 
 @dataclass
 class RawBasketballData:
@@ -311,17 +310,4 @@ def transform_pbp_data(payload):
     
     df_pbps = get_pbp_df(parsed_entities.pbp_events, lookup_teams, lookup_matches, lookup_players)
 
-    if df_pbps.empty:
-        return pd.DataFrame(), df_matches, df_teams, df_players, df_competitions
-
-    logging.info("Generating Stints from Play-by-Play data...")
-    df_stints, _ = process_events_to_stints(df_matches, df_pbps)
-
-    if not df_stints.empty:
-        df_stints['home_lineup'] = df_stints['home_lineup'].apply(lambda x: ",".join(map(str, sorted(list(x)))))
-        df_stints['away_lineup'] = df_stints['away_lineup'].apply(lambda x: ",".join(map(str, sorted(list(x)))))
-        df_stints['stint_id'] = df_stints.apply(
-            lambda r: f"{r['match_id']}_{r['nperiod']}_{r['start'].replace(':', '')}", axis=1
-        )
-       
-    return df_stints, df_matches, df_teams, df_players, df_competitions
+    return df_pbps, df_matches, df_teams, df_players, df_competitions
