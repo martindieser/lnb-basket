@@ -27,6 +27,7 @@ def get_random_profile():
     selected = random.choice(all_profiles)
     logger.info(f"Selected Random Profile: {selected}")
     return selected
+
 @task
 def execute_scraping_phase(profile_id, selected_start, selected_end):
     from src.utils import get_season_id_from_date
@@ -55,52 +56,13 @@ def execute_scraping_phase(profile_id, selected_start, selected_end):
     logger.info("--- Scraping Phase Completed Successfully ---")
     return "success"
 
-@task
-def batch_processing(ref_date, upstream_status):
-    if upstream_status == "no_matches":
-        logger.info("Nothing to process, skipping ETL.")
-        return
-
-    import boto3
-    from src.utils import get_season_id_from_date
-    from src.etl.extract import extract_dirs, update_processed_registry
-    from src.etl.transform import transform_pbp_data
-    from src.etl.load import load_data_to_db
-
-    # Extracción Incremental (solo archivos nuevos)
-    raw_data, new_keys = extract_dirs()
-    
-    if not raw_data:
-        logger.info("No new data to process in this run.")
-        return
-
-    # Transformación y Carga (con Upsert para no perder historial)
-    pbps, matches, teams, players, comp = transform_pbp_data(raw_data)
-    load_data_to_db(pbps, matches, teams, players, comp)
-
-    # Registro de archivos procesados exitosamente
-    s3_client = boto3.client('s3')
-    update_processed_registry(s3_client, new_keys)
-    logger.info(f"Successfully processed {len(new_keys)} new files and updated registry.")
-
-@task
-def generate_predictions_task(upstream_status):
-    if upstream_status == "no_matches":
-        logger.info("Nothing new to predict.")
-        return
-    
-    from src.etl.predict import generate_predictions
-    generate_predictions()
-
-@flow(name="cabb_scraping_workflow")
-def cabb_scraping_workflow(
+@flow(name="cabb_ingestion_bronze")
+def ingestion_flow(
     start_date: Optional[str] = None,
     end_date: Optional[str] = None):
     """
-    Workflow de scraping y procesamiento de datos de la CABB.
-    Migrado de Airflow a Prefect.
+    Capa Bronze: Recolección de datos crudos desde CABB y almacenamiento en S3 (JSON).
     """
-    # Lógica para fechas por defecto (reemplaza macros de Airflow)
     if not start_date:
         start_date = datetime.now().strftime("%Y-%m-%d")
     
@@ -108,28 +70,15 @@ def cabb_scraping_workflow(
         start_dt = datetime.strptime(start_date, "%Y-%m-%d")
         end_date = (start_dt + timedelta(days=7)).strftime("%Y-%m-%d")
 
-    logger.info(f"Workflow iniciado para el rango: {start_date} - {end_date}")
+    logger.info(f"Ingesta iniciada para el rango: {start_date} - {end_date}")
 
     profile_id = get_random_profile()
     
-    scraping_status = execute_scraping_phase(
+    execute_scraping_phase(
         profile_id=profile_id,
         selected_start=start_date,
         selected_end=end_date,
     )
-    
-    # Procesamiento por lotes
-    batch_processing_status = batch_processing(
-        ref_date=start_date, 
-        upstream_status=scraping_status
-    )
-    
-    # Generación de predicciones (espera a que termine el procesamiento)
-    generate_predictions_task(
-        upstream_status=scraping_status, 
-        wait_for=[batch_processing_status]
-    )
 
 if __name__ == "__main__":
-    # Permite ejecución directa para pruebas locales
-    cabb_scraping_workflow()
+    ingestion_flow()

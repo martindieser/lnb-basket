@@ -18,16 +18,16 @@ pull:
     directory: "{{ clone_step.directory }}"
 # deployment section allows you to manage and coordinate your deployments
 deployments:
-- name: daily-cabb-etl
+- name: cabb-ingestion-bronze
   version: null
-  tags: []
-  description: "Daily CABB Scraping and ETL workflow"
+  tags: ["bronze"]
+  description: "Scraping de datos crudos de la CABB (Capa Bronze)"
   schedule:
-    cron: "0 0 * * *"
+    cron: "0 4 * * *"
     timezone: "UTC"
-  entrypoint: "src/flows/cabb.py:cabb_scraping_workflow"
+  entrypoint: "src/flows/ingestion.py:ingestion_flow"
   parameters: {}
-  work_pool:
+  work_pool: &work_pool_config
     name: default-managed
     work_queue_name: null
     job_variables:
@@ -39,3 +39,21 @@ deployments:
         AWS_REGION: "{{ prefect.blocks.secret.aws-region }}"
         S3_RAW_PREFIX: "{{ prefect.blocks.secret.s3-raw-prefix }}"
         S3_CURATED_PREFIX: "{{ prefect.blocks.secret.s3-curated-prefix }}"
+
+- name: cabb-normalization-silver
+  version: null
+  tags: ["silver"]
+  description: "Normalización de datos de la CABB (Capa Silver)"
+  entrypoint: "src/flows/normalization.py:normalization_flow"
+  parameters: {}
+  work_pool: *work_pool_config
+  triggers:
+    - type: event
+      enabled: true
+      match:
+        prefect.resource.id: "prefect.flow-run.*"
+      match_related:
+        - prefect.resource.name: "cabb_ingestion_bronze"
+          prefect.resource.role: "flow"
+      expect:
+        - "prefect.flow-run.Completed"
