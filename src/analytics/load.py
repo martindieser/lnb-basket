@@ -1,10 +1,9 @@
 import pandas as pd
-from src.config import S3_BUCKET_NAME, get_logger
+from src.config import S3_BUCKET_NAME, S3_ANALYTICS_PREFIX, get_logger
 
 logger = get_logger()
 
-# Prefix for the Gold/Analytics zone
-S3_ANALYTICS_PREFIX = "analytics"
+
 
 def write_to_s3_parquet(df, entity_name, pk_columns=None, upsert=True):
     """

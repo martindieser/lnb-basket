@@ -14,6 +14,8 @@ CABB_PATH = os.getenv("CABB_PATH", DATA_DIR)
 S3_BUCKET_NAME = os.getenv("S3_BUCKET_NAME")
 S3_RAW_PREFIX = os.getenv("S3_RAW_PREFIX", "raw")
 S3_CURATED_PREFIX = os.getenv("S3_CURATED_PREFIX", "curated")
+S3_ANALYTICS_PREFIX = os.getenv("S3_ANALYTICS_PREFIX", "analytics")
+
 
 # Proxy Configuration
 SCRAPER_PROXY = os.getenv("SCRAPER_PROXY")
