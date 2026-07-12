@@ -2,7 +2,8 @@ import os
 from dotenv import load_dotenv
 from pathlib import Path
 
-env_path = Path(__file__).resolve().parent.parent.parent / ".env"
+        
+env_path = Path(__file__).resolve().parent.parent / ".env"
 load_dotenv(env_path)
 
 # Base paths with environment variable support for flexibility (Docker/Local)
@@ -40,3 +41,13 @@ UNKNOWN_NAME_FIX = {
 TEAM_MAPPING = {
     # Add mappings if necessary
 }
+
+
+def get_logger():
+    try:
+        from prefect.logging import get_run_logger
+        return get_run_logger()
+    except Exception:
+        return logging.getLogger(__name__)
+
+

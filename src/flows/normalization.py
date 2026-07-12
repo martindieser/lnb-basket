@@ -1,26 +1,24 @@
 import logging
 from typing import Optional
 from datetime import datetime
-from prefect import flow, task, get_run_logger
+from prefect import flow, task
+
+from src.config import get_logger
 
 from dotenv import load_dotenv
 from pathlib import Path
 
-env_path = Path(__file__).resolve().parent.parent.parent / ".env"
-load_dotenv(env_path)
-
-# Configurar logging básico para visibilidad en Prefect
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+# env_path = Path(__file__).resolve().parent.parent.parent / ".env"
+# load_dotenv(env_path)
 
 @task
 def batch_processing(ref_date):
     import boto3
-    from src.etl.extract import extract_dirs, update_processed_registry
-    from src.etl.transform import transform_pbp_data
-    from src.etl.load import load_data_to_db
+    from src.normalization.extract import extract_dirs, update_processed_registry
+    from src.normalization.transform import transform_pbp_data
+    from src.normalization.load import load_data_to_db
 
-    logger = get_run_logger()
+    logger = get_logger()
     # Extracción Incremental (solo archivos nuevos)
     raw_data, new_keys = extract_dirs()
     
@@ -43,8 +41,8 @@ def normalization_flow(ref_date: Optional[str] = None):
     """
     Capa Silver: Transformación de datos crudos a formato relacional normalizado (Parquet).
     """
-    
-    logger = get_run_logger()
+
+    logger = get_logger()
     if not ref_date:
         ref_date = datetime.now().strftime("%Y-%m-%d")
 
