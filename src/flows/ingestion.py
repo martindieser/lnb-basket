@@ -2,7 +2,7 @@ import logging
 import random
 from typing import Optional
 from datetime import datetime, timedelta
-from prefect import flow, task
+from prefect import flow, task, get_run_logger
 
 from dotenv import load_dotenv
 from pathlib import Path
@@ -10,14 +10,11 @@ from pathlib import Path
 env_path = Path(__file__).resolve().parent.parent.parent / ".env"
 load_dotenv(env_path)
 
-# Configurar logging básico para visibilidad en Prefect
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
 
 @task
 def get_random_profile():
     from src.scrapers.cabb.sessions import Cache
-
+    logger = get_run_logger()
     logger.info("Selecting a random profile...")
     all_profiles = Cache.available_profiles()
     if not all_profiles:
@@ -33,9 +30,10 @@ def execute_scraping_phase(profile_id, selected_start, selected_end):
     from src.utils import get_season_id_from_date
     from src.scrapers.cabb.scraper import CABBScraper
 
+    logger = get_run_logger()
     logger.info(f"--- Starting Unified Scraping Phase (Profile: {profile_id}) ---")
 
-    scraper = CABBScraper(profile_id)
+    scraper = CABBScraper(logger, profile_id)
     internal_cat_id = get_season_id_from_date(selected_start)
 
     logger.info(f"Resolving Category ID for season {internal_cat_id}")
@@ -63,6 +61,8 @@ def ingestion_flow(
     """
     Capa Bronze: Recolección de datos crudos desde CABB y almacenamiento en S3 (JSON).
     """
+    logger = get_run_logger()
+
     if not start_date:
         start_date = datetime.now().strftime("%Y-%m-%d")
     

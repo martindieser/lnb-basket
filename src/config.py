@@ -14,6 +14,11 @@ S3_BUCKET_NAME = os.getenv("S3_BUCKET_NAME")
 S3_RAW_PREFIX = os.getenv("S3_RAW_PREFIX", "raw")
 S3_CURATED_PREFIX = os.getenv("S3_CURATED_PREFIX", "curated")
 
+# Proxy Configuration
+SCRAPER_PROXY = os.getenv("SCRAPER_PROXY")
+PROXY_CA = os.getenv("PROXY_CA")
+
+
 # Data Fixes and Mappings
 UNKNOWN_NAME_FIX = {
     326138: 'AALIYA, LEE ABRAHAM', 325183: 'NEGRETE, ALEX',
