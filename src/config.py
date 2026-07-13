@@ -2,7 +2,8 @@ import os
 from dotenv import load_dotenv
 from pathlib import Path
 
-env_path = Path(__file__).resolve().parent.parent.parent / ".env"
+        
+env_path = Path(__file__).resolve().parent.parent / ".env"
 load_dotenv(env_path)
 
 # Base paths with environment variable support for flexibility (Docker/Local)
@@ -13,6 +14,16 @@ CABB_PATH = os.getenv("CABB_PATH", DATA_DIR)
 S3_BUCKET_NAME = os.getenv("S3_BUCKET_NAME")
 S3_RAW_PREFIX = os.getenv("S3_RAW_PREFIX", "raw")
 S3_CURATED_PREFIX = os.getenv("S3_CURATED_PREFIX", "curated")
+S3_ANALYTICS_PREFIX = os.getenv("S3_ANALYTICS_PREFIX", "analytics")
+AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID")
+AWS_SECRET_ACCESS_KEY = os.getenv("AWS_SECRET_ACCESS_KEY")
+AWS_REGION = os.getenv("AWS_REGION", "us-east-1")
+
+
+# Proxy Configuration
+SCRAPER_PROXY = os.getenv("SCRAPER_PROXY")
+PROXY_CA = os.getenv("PROXY_CA")
+
 
 # Data Fixes and Mappings
 UNKNOWN_NAME_FIX = {
@@ -35,3 +46,13 @@ UNKNOWN_NAME_FIX = {
 TEAM_MAPPING = {
     # Add mappings if necessary
 }
+
+
+def get_logger():
+    try:
+        from prefect.logging import get_run_logger
+        return get_run_logger()
+    except Exception:
+        return logging.getLogger(__name__)
+
+

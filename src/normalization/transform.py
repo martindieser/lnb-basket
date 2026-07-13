@@ -6,7 +6,9 @@ from datetime import datetime
 from dataclasses import dataclass, field
 from rapidfuzz import process, fuzz
 
-from src.config import UNKNOWN_NAME_FIX
+
+
+from src.config import UNKNOWN_NAME_FIX, get_logger
 from src.utils import (
     clean_text,
     NAMESPACE, 
@@ -16,7 +18,6 @@ from src.utils import (
     create_team_id, 
     create_player_id
 )
-from src.stats.stints import process_events_to_stints
 
 @dataclass
 class RawBasketballData:
@@ -39,8 +40,12 @@ def _fix_player_name(player, UNKNOWN_NAME_FIX):
     return clean_text(nombre)
 
 def get_pbp_df(lista_pbp_dfs, lookup_teams, lookup_matches, lookup_players):
+    logger = get_logger()
     if not lista_pbp_dfs:
+        logger.warning("No hay eventos Play-by-Play para procesar.")
         return pd.DataFrame()
+
+    logger.info(f"Transformando {len(lista_pbp_dfs)} eventos Play-by-Play...")
 
     df = pd.DataFrame(lista_pbp_dfs).rename(columns={
         'autoincremental_id' : 'seq',
@@ -95,17 +100,28 @@ def get_pbp_df(lista_pbp_dfs, lookup_teams, lookup_matches, lookup_players):
         how='left'
     )
     assert df['match_raw_id'].isna().sum() == 0 
+    
+    unmapped_events = df[df['match_id'].isna()]
+    if not unmapped_events.empty:
+        logger.warning(f"Se encontraron {len(unmapped_events)} eventos Play-by-Play que no pudieron ser asociados a ningún partido (match_id es nulo).")
+        sample_raw_ids = unmapped_events['match_raw_id'].unique()[:5]
+        logger.warning(f"  - Ejemplos de raw_id de partidos no mapeados: {list(sample_raw_ids)}")
+
     df = df.drop(columns=['match_raw_id'])
 
     df['pbp_id'] = df.apply(create_pbp_uuid, axis=1)
+    original_count = len(df)
     df = df.drop_duplicates(subset=['pbp_id'], keep='first')
+    logger.info(f"PBP completo. Mapeados {len(df)} eventos únicos (eliminados {original_count - len(df)} duplicados).")
     
     columns = ['seq', 'period', 'clk', 'event_type', 'jersey', 'x', 'y', 'zone', 
                'note', 'team_id', 'player_id', 'match_id', 'pbp_id']
     return df[columns]
 
 def get_matches_df(matches, df_comp, lookup_teams):
+    logger = get_logger()
     if not matches:
+        logger.warning("No hay partidos para transformar.")
         return pd.DataFrame(), pd.DataFrame()
     
     df = pd.DataFrame(matches)
@@ -134,6 +150,17 @@ def get_matches_df(matches, df_comp, lookup_teams):
         .drop(columns=['team_raw_id'])
 
     df['match_id'] = df.apply(lambda r: create_match_id(r['local'], r['visitante'], r['date']), axis=1)
+    
+    # Detectar duplicados de partidos antes de eliminarlos
+    # Esto se debe a que por alguna razón existe el partido NO_COMENZADO y el FINALIZADO simultaneamente
+    # Me paso cuando deje mucho tiempo sin correr el scraper.
+    # En estos casos basta con priorizar el estado del partido FINALIZADO
+    df = pd.concat([
+            df[df['estado_partido'] == 'FINALIZADO'],
+            df[df['estado_partido'] == 'NO_COMENZADO']
+        ], ignore_index= True)
+
+    # Eliminamos duplicados (al estar los jugados primero, en el caso de simultaneadad los conserva)
     df = df.drop_duplicates(subset=['match_id'], keep='first')
 
     rename_map = {
@@ -154,11 +181,16 @@ def get_matches_df(matches, df_comp, lookup_teams):
         if col not in df.columns:
             df[col] = 4 if col == 'periods' else (10 if col == 'total_duration_mm' else 5)
             
+    logger.info(f"Transformación de partidos completada. {len(df)} partidos limpios obtenidos.")
     return df[final_columns], df[['match_id', 'raw_id']].copy()
 
 def get_teams_df(raw_teams):
+    logger = get_logger()
     if not raw_teams:
+        logger.warning("No hay equipos para procesar.")
         return pd.DataFrame(), pd.DataFrame()
+    
+    logger.info(f"Procesando {len(raw_teams)} entradas de equipos...")
     
     df = pd.DataFrame(raw_teams)
     df['raw_id'] = df['team_id']
@@ -166,11 +198,16 @@ def get_teams_df(raw_teams):
     df['team_id'] = df['team_name'].apply(create_team_id)
     lookup = df[['team_id', 'raw_id']].drop_duplicates(subset=['raw_id'], keep='first')
     df_final = df.drop_duplicates(subset=['team_id'], keep='first')[['team_id', 'team_name']]
+    logger.info(f"Deduplicación de equipos completada. Encontrados {len(df_final)} equipos únicos.")
     return df_final, lookup
 
 def get_players_df(raw_players, threshold=95):
+    logger = get_logger()
     if not raw_players:
+        logger.warning("No hay jugadores para procesar.")
         return pd.DataFrame(), pd.DataFrame()
+    
+    logger.info(f"Procesando {len(raw_players)} entradas de jugadores...")
 
     df = pd.DataFrame(raw_players) \
         .rename(columns={'IdJugador': 'player_id', 'Nombre': 'player_name'}) \
@@ -186,6 +223,7 @@ def get_players_df(raw_players, threshold=95):
     if not df_valid.empty:
         df_valid['name_clean'] = df_valid['player_name'].str.replace(',', '').str.replace(r'\s+', ' ', regex=True).str.strip()
         unique_names = df_valid['name_clean'].unique().tolist()
+        logger.debug(f"Ejecutando deduplicación difusa en {len(unique_names)} nombres de jugadores únicos...")
         
         G = nx.Graph()
         G.add_nodes_from(unique_names)
@@ -203,9 +241,11 @@ def get_players_df(raw_players, threshold=95):
         df_valid['player_name'] = df_valid['name_clean'].map(name_mapping)
         df_valid['player_id'] = df_valid['player_name'].apply(create_player_id)
         df_valid = df_valid.drop(columns=['name_clean'])
+        logger.info(f"Deduplicación completada: {len(unique_names)} nombres agrupados en {len(df_valid['player_name'].unique())} jugadores únicos.")
 
     if not df_placeholders.empty:
         df_placeholders['player_id'] = "UNKNOWN_" + df_placeholders['raw_id'].astype(str)
+        logger.info(f"Encontrados {len(df_placeholders)} jugadores con nombre placeholder (UNKNOWN).")
 
     df = pd.concat([df_valid, df_placeholders], ignore_index=True)
     lookup = df[['player_id', 'raw_id']].drop_duplicates(subset=['raw_id'], keep='first')
@@ -221,6 +261,8 @@ def get_competitions_df(raw_competitions) -> pd.DataFrame:
     return df
 
 def parse_payload_to_raw(payload: dict) -> RawBasketballData:
+    logger = get_logger()
+    logger.info(f"Parseando payload bruto con {len(payload)} competiciones...")
     raw_storage = RawBasketballData()
     teams = {}
     
@@ -235,6 +277,7 @@ def parse_payload_to_raw(payload: dict) -> RawBasketballData:
         for filename in comp_payload:
             pbp = comp_payload[filename].get('pbp', {})
             if pbp.get('error') == 'sin datos':
+                logger.warning(f"Omitiendo partido {filename} en competición {comp_name} por error de CABB: 'sin datos'.")
                 continue
 
             match_info = pbp.get('partido', {}).copy()
@@ -283,7 +326,7 @@ def parse_payload_to_raw(payload: dict) -> RawBasketballData:
                 mat['idlocal'] = fake_raw_id
                 teams[fake_raw_id] = {'team_id': fake_raw_id, 'team_name': nlocal, 'raw_id': fake_raw_id}
                 team_name_to_id[nlocal] = fake_raw_id
-                logging.warning(f"Generando ID provisorio {fake_raw_id} para Local '{nlocal}' en {mat['raw_id']}")
+                logger.warning(f"Generando ID provisorio {fake_raw_id} para Local '{nlocal}' en partido {mat['raw_id']}")
 
         if not mat.get('idvisitante'):
             nvisitante = str(mat.get('visitante')).strip()
@@ -294,34 +337,34 @@ def parse_payload_to_raw(payload: dict) -> RawBasketballData:
                 mat['idvisitante'] = fake_raw_id
                 teams[fake_raw_id] = {'team_id': fake_raw_id, 'team_name': nvisitante, 'raw_id': fake_raw_id}
                 team_name_to_id[nvisitante] = fake_raw_id
-                logging.warning(f"Generando ID provisorio {fake_raw_id} para Visitante '{nvisitante}' en {mat['raw_id']}")
+                logger.warning(f"Generando ID provisorio {fake_raw_id} para Visitante '{nvisitante}' en partido {mat['raw_id']}")
 
+
+    logger.info(f"Parseo de payload completado: {len(raw_storage.matches)} partidos, {len(raw_storage.teams)} equipos, {len(raw_storage.pbp_events)} eventos, {len(raw_storage.players)} jugadores.")
     raw_storage.teams = list(teams.values())
     return raw_storage
 
 def transform_pbp_data(payload):
+    logger = get_logger()
+    logger.info("Iniciando fase de transformación de datos Play-by-Play (Bronze -> Silver)...")
     parsed_entities = parse_payload_to_raw(payload)
-    
     df_competitions = get_competitions_df(parsed_entities.competitions)
     df_players, lookup_players = get_players_df(parsed_entities.players)
     df_teams, lookup_teams = get_teams_df(parsed_entities.teams)
     df_matches, lookup_matches = get_matches_df(parsed_entities.matches, df_competitions, lookup_teams)
 
-    assert len(df_matches) == len(parsed_entities.matches), f"{len(df_matches)} != {len(parsed_entities.matches)}"
+    # assert len(df_matches) == len(parsed_entities.matches), f"{len(df_matches)} != {len(parsed_entities.matches)}"
     
     df_pbps = get_pbp_df(parsed_entities.pbp_events, lookup_teams, lookup_matches, lookup_players)
 
-    if df_pbps.empty:
-        return pd.DataFrame(), df_matches, df_teams, df_players, df_competitions
+    logger.info("=" * 60)
+    logger.info("RESUMEN DE REGISTROS PROCESADOS (SILVER)")
+    logger.info("=" * 60)
+    logger.info(f"  - Competiciones: {len(df_competitions)}")
+    logger.info(f"  - Equipos:       {len(df_teams)} (Mapeos en lookup: {len(lookup_teams)})")
+    logger.info(f"  - Jugadores:     {len(df_players)} (Mapeos en lookup: {len(lookup_players)})")
+    logger.info(f"  - Partidos:      {len(df_matches)}")
+    logger.info(f"  - Eventos PBP:   {len(df_pbps)}")
+    logger.info("=" * 60)
 
-    logging.info("Generating Stints from Play-by-Play data...")
-    df_stints, _ = process_events_to_stints(df_matches, df_pbps)
-
-    if not df_stints.empty:
-        df_stints['home_lineup'] = df_stints['home_lineup'].apply(lambda x: ",".join(map(str, sorted(list(x)))))
-        df_stints['away_lineup'] = df_stints['away_lineup'].apply(lambda x: ",".join(map(str, sorted(list(x)))))
-        df_stints['stint_id'] = df_stints.apply(
-            lambda r: f"{r['match_id']}_{r['nperiod']}_{r['start'].replace(':', '')}", axis=1
-        )
-       
-    return df_stints, df_matches, df_teams, df_players, df_competitions
+    return df_pbps, df_matches, df_teams, df_players, df_competitions

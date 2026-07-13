@@ -209,26 +209,6 @@ class StintParser:
                 self.player_boxscore[pid][col] += val
 
 
-def process_match_events(match_events, home_id, away_id):
-    """
-    Procesa un solo partido y retorna sus stints y boxscores.
-    """
-    parser = StintParser(home_id, away_id)
-    
-    # Ordenar por secuencia es vital
-    events_sorted = match_events.sort_values(by=['seq'], ascending=True)
-    
-    for row in events_sorted.itertuples(index=False):
-        # row.event_type, row.clk, etc... es más rápido que iterrows
-        parser.process_event(
-            etype=row.event_type,
-            etime=row.clk,
-            tid=row.team_id,
-            pid=row.player_id
-        )
-        
-    return parser.get_results()
-
 def process_events_to_stints(matches, events):
     match_ids = matches['match_id'].unique()
     matches = matches.copy().set_index('match_id') 
