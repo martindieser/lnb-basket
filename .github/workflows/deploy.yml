@@ -2,7 +2,8 @@ name: Deploy to Prefect Cloud
 on:
   push:
     branches:
-      - migrate-to-prefect
+      - refac/prefect-flows
+      - main
   workflow_dispatch:
 jobs:
   deploy:
@@ -29,6 +30,7 @@ jobs:
           AWS_REGION: ${{ secrets.AWS_REGION }}
           S3_RAW_PREFIX: ${{ secrets.S3_RAW_PREFIX }}
           S3_CURATED_PREFIX: ${{ secrets.S3_CURATED_PREFIX }}
+          S3_ANALYTICS_PREFIX: ${{ secrets.S3_ANALYTICS_PREFIX }}
         run: |
           python -c "
           from prefect.blocks.system import Secret
@@ -40,6 +42,7 @@ jobs:
           Secret(value=os.environ['AWS_REGION']).save('aws-region', overwrite=True)
           Secret(value=os.environ['S3_RAW_PREFIX']).save('s3-raw-prefix', overwrite=True)
           Secret(value=os.environ['S3_CURATED_PREFIX']).save('s3-curated-prefix', overwrite=True)
+          Secret(value=os.environ['S3_ANALYTICS_PREFIX']).save('s3-analytics-prefix', overwrite=True)
           print('Secret blocks created/updated successfully')
           "
       - name: Prefect Deploy
