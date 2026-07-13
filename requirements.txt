@@ -7,7 +7,7 @@ curl_cffi
 boto3
 s3fs
 pyarrow
-duckdb
+duckdb<1.0
 streamlit
 statsmodels
 tqdm
