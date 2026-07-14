@@ -1,7 +1,7 @@
 import os
 from dotenv import load_dotenv
 from pathlib import Path
-
+import logging
         
 env_path = Path(__file__).resolve().parent.parent / ".env"
 load_dotenv(env_path)
@@ -48,11 +48,25 @@ TEAM_MAPPING = {
 }
 
 
-def get_logger():
+def get_logger(name=None):
+    import logging
+    import sys
     try:
         from prefect.logging import get_run_logger
         return get_run_logger()
     except Exception:
-        return logging.getLogger(__name__)
-
-
+        # Si el root logger no tiene handlers, inicializamos basicConfig
+        if not logging.getLogger().handlers:
+            logging.basicConfig(
+                level=logging.INFO,
+                format="%(asctime)s [%(levelname)s] %(name)s - %(message)s"
+            )
+        
+        # Si no pasan name, inspeccionamos el frame para obtener el __name__ de quien llamó a get_logger
+        if name is None:
+            try:
+                name = sys._getframe(1).f_globals.get('__name__', __name__)
+            except Exception:
+                name = __name__
+                
+        return logging.getLogger(name)
