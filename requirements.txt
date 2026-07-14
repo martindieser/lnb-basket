@@ -12,3 +12,4 @@ streamlit
 statsmodels
 tqdm
 prefect
+beautifulsoup4

@@ -138,6 +138,7 @@ def extract_from_s3() -> tuple:
     
     return organized_result, actual_new_keys
 
+
 def _parse_folder_name(folder_name: str):
     """
     Helper to extract data_type and competition from folder name.
@@ -151,3 +152,28 @@ def _parse_folder_name(folder_name: str):
     elif folder_name == 'upcoming':
         return 'pbp', 'upcoming'
     return None, None
+
+def extract_proballers_details() -> dict:
+    """
+    Downloads raw/player_details/proballers.json from S3 and parses it as a dict.
+    Returns an empty dict if the file does not exist or S3 is not configured.
+    """
+    if not S3_BUCKET_NAME:
+        logging.error("S3_BUCKET_NAME environment variable is not set. S3 is mandatory.")
+        return {}
+        
+    s3_client = boto3.client('s3')
+    s3_key = f"{S3_RAW_PREFIX}/player_details/proballers.json"
+    
+    try:
+        logging.info(f"Downloading player details from s3://{S3_BUCKET_NAME}/{s3_key}...")
+        resp = s3_client.get_object(Bucket=S3_BUCKET_NAME, Key=s3_key)
+        data = json.loads(resp['Body'].read().decode('utf-8'))
+        logging.info(f"Successfully loaded details for {len(data)} players from Proballers.")
+        return data
+    except s3_client.exceptions.NoSuchKey:
+        logging.warning(f"Player details file not found in S3 at key {s3_key}. Returning empty dict.")
+        return {}
+    except Exception as e:
+        logging.error(f"Error extracting player details from S3: {e}")
+        return {}

@@ -14,11 +14,20 @@ from pathlib import Path
 @task
 def batch_processing(ref_date):
     import boto3
-    from src.normalization.extract import extract_dirs, update_processed_registry
+    from src.normalization.extract import (
+        extract_dirs, 
+        update_processed_registry,
+        extract_proballers_details
+    )
     from src.normalization.transform import transform_pbp_data
     from src.normalization.load import load_data_to_db
 
     logger = get_logger()
+    
+    # Extracción de detalles de jugadores desde S3
+    logger.info("Extracting Proballers player details from S3...")
+    players_details = extract_proballers_details()
+    
     # Extracción Incremental (solo archivos nuevos)
     raw_data, new_keys = extract_dirs()
     
@@ -27,7 +36,7 @@ def batch_processing(ref_date):
         return "no_new_data"
 
     # Transformación y Carga (con Upsert para no perder historial)
-    pbps, matches, teams, players, comp = transform_pbp_data(raw_data)
+    pbps, matches, teams, players, comp = transform_pbp_data(raw_data, players_details)
     load_data_to_db(pbps, matches, teams, players, comp)
 
     # Registro de archivos procesados exitosamente

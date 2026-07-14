@@ -4,7 +4,7 @@ import networkx as nx
 import logging
 from datetime import datetime
 from dataclasses import dataclass, field
-from rapidfuzz import process, fuzz
+from rapidfuzz import process, fuzz, utils
 
 
 
@@ -201,13 +201,14 @@ def get_teams_df(raw_teams):
     logger.info(f"Deduplicación de equipos completada. Encontrados {len(df_final)} equipos únicos.")
     return df_final, lookup
 
-def get_players_df(raw_players, threshold=95):
+def get_players_df(raw_players, players_details, threshold=95):
     logger = get_logger()
     if not raw_players:
         logger.warning("No hay jugadores para procesar.")
         return pd.DataFrame(), pd.DataFrame()
     
     logger.info(f"Procesando {len(raw_players)} entradas de jugadores...")
+    logger.info(f"Procesando player_details {len(players_details)}")
 
     df = pd.DataFrame(raw_players) \
         .rename(columns={'IdJugador': 'player_id', 'Nombre': 'player_name'}) \
@@ -249,7 +250,60 @@ def get_players_df(raw_players, threshold=95):
 
     df = pd.concat([df_valid, df_placeholders], ignore_index=True)
     lookup = df[['player_id', 'raw_id']].drop_duplicates(subset=['raw_id'], keep='first')
-    df_final = df.drop_duplicates(subset=['player_id'], keep='first')[['player_id', 'player_name']]
+    df_final = df.drop_duplicates(subset=['player_id'], keep='first')[['player_id', 'player_name']].copy()
+
+    # Inicializar columnas del esquema
+    df_final['height_cm'] = None
+    df_final['nationality'] = None
+    df_final['birth_date'] = None
+
+    # Enriquecer con players_details usando Fuzzy Matching si se proveen datos
+    if players_details and not df_final.empty:
+        pb_list = []
+        for p_id, info in players_details.items():
+            pb_list.append(info)
+
+        if pb_list:
+            pb_names = [p['name'] for p in pb_list]
+            
+            heights = []
+            nationalities = []
+            birth_dates = []
+            match_count = 0
+            
+            for name in df_final['player_name']:
+                clean_cabb_name = name.replace(',', ' ').strip()
+                # fuzz.token_set_ratio es ideal para cruzar "APELLIDO, NOMBRE" con "Nombre Apellido"
+                match = process.extractOne(
+                    clean_cabb_name,
+                    pb_names,
+                    scorer=fuzz.token_set_ratio,
+                    processor=utils.default_process,
+                    score_cutoff=85  # Umbral para el matching cruzado
+                )
+                
+                if match:
+                    matched_name = match[0]
+                    score = match[1]
+                    matched_info = next((p for p in pb_list if p['name'] == matched_name), None)
+                    if matched_info:
+                        logger.info(f"Coincidencia: '{name}' asociado con '{matched_name}' (Puntaje: {score:.1f})")
+                        heights.append(matched_info.get('height_cm'))
+                        nationalities.append(matched_info.get('nationality'))
+                        birth_dates.append(matched_info.get('birth_date'))
+                        match_count += 1
+                        continue
+                        
+                logger.warning(f"Sin coincidencia: No se encontraron detalles para el jugador '{name}'")
+                heights.append(None)
+                nationalities.append(None)
+                birth_dates.append(None)
+                
+            logger.info(f"Resumen de enriquecimiento: Se asociaron con éxito {match_count}/{len(df_final)} jugadores con sus detalles.")
+            df_final['height_cm'] = heights
+            df_final['nationality'] = nationalities
+            df_final['birth_date'] = birth_dates
+
     return df_final, lookup
 
 def get_competitions_df(raw_competitions) -> pd.DataFrame:
@@ -344,12 +398,12 @@ def parse_payload_to_raw(payload: dict) -> RawBasketballData:
     raw_storage.teams = list(teams.values())
     return raw_storage
 
-def transform_pbp_data(payload):
+def transform_pbp_data(payload, players_details):
     logger = get_logger()
     logger.info("Iniciando fase de transformación de datos Play-by-Play (Bronze -> Silver)...")
     parsed_entities = parse_payload_to_raw(payload)
     df_competitions = get_competitions_df(parsed_entities.competitions)
-    df_players, lookup_players = get_players_df(parsed_entities.players)
+    df_players, lookup_players = get_players_df(parsed_entities.players, players_details)
     df_teams, lookup_teams = get_teams_df(parsed_entities.teams)
     df_matches, lookup_matches = get_matches_df(parsed_entities.matches, df_competitions, lookup_teams)
 
@@ -366,5 +420,4 @@ def transform_pbp_data(payload):
     logger.info(f"  - Partidos:      {len(df_matches)}")
     logger.info(f"  - Eventos PBP:   {len(df_pbps)}")
     logger.info("=" * 60)
-
     return df_pbps, df_matches, df_teams, df_players, df_competitions
