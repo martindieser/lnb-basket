@@ -11,4 +11,4 @@ duckdb<1.0
 streamlit
 statsmodels
 tqdm
-prefect
+prefect>=3.0.0

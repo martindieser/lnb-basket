@@ -11,21 +11,23 @@ RUN apt-get update && apt-get install -y \
     git \
     ca-certificates \
     openssl \
-    && apt-get clean
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
 
-# 3. Instalación de dependencias
+# 3. Instalación de dependencias públicas
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# 4. Código del proyecto
+# 4. Instalación del paquete privado cabb-client
+ARG GITHUB_TOKEN
+RUN pip install --no-cache-dir "git+https://${GITHUB_TOKEN}@github.com/martindieser/cabb-client.git"
+
+# 5. Código del proyecto
 COPY . .
-# Se evita instalar el paquete local siguiendo las indicaciones del TODO.md
 
 # Variables de entorno
-# Establecemos PYTHONPATH en /app para que las importaciones 'from src.xxx' funcionen correctamente
 ENV PYTHONPATH="/app"
 ENV PYTHONUNBUFFERED=1
 
 # Comando por defecto: Iniciar un worker de Prefect
-# Nota: Requiere configurar PREFECT_API_URL y PREFECT_API_KEY en el entorno
 CMD ["prefect", "worker", "start", "--pool", "default-agent-pool"]
