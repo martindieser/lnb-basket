@@ -24,7 +24,8 @@ deployments:
     cron: "0 4 * * *"
     timezone: "UTC"
   entrypoint: "src/flows/ingestion.py:ingestion_flow"
-  parameters: {}
+  parameters:
+    league: "liga nacional"
   work_pool: &work_pool_config
     name: default-managed
     work_queue_name: null
