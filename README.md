@@ -1,28 +1,17 @@
-# Pipeline de datos: La Liga Nacional de Basquet
-
-![Dashboard de Predicciones](docs/dashboard)
-
-<!-- DOCS_START -->
-
-## Documentación Técnica
-
-<details>
-<summary><strong>Design</strong> (click para expandir)</summary>
-
 <h1>Diseño del Pipeline de Datos</h1>
 
-<details open>
-<summary><strong>Tabla de Contenidos</strong></summary>
+<h3>Tabla de Contenidos</h2>
 
 - [Visión general](#visión-general)
 - [Cómo fluyen los datos](#cómo-fluyen-los-datos)
-- [Confiabilidad y Procesamiento Incremental](#confiabilidad)
+- [Identificadores y Almacenamiento](#identificadores-y-almacenamiento)
 - [Capa Bronze](#bronze)
 - [Capa Silver](#silver)
 - [Capa Gold](#gold)
 - [Estadísticas que se miden para cada Jugador](#stats)
+- [Deployment](#deployment)
+- [TODO](#todo)
 
-</details>
 
 <h2 id="vision-general">Visión general</h2>
 
@@ -54,6 +43,75 @@ El pipeline corre de punta a punta orquestado con **Prefect**: cada capa es cone
 </div>
 
 Silver y Gold usan Parquet porque el esquema ya está definido y las consultas son columnares optimizado para analiticas. Parquet comprime bien datos tabulares y es compatible con cualquier herramienta del ecosistema (DuckDB, Polars, Spark, Athena). Raw usa JSON para preservar fidelidad total a la fuente: si el formato de la CABB cambia o hay que reprocesar, el dato original está intacto.
+
+
+<h2 id="identificadores-y-almacenamiento">Identificadores y Almacenamiento</h2>
+
+El pipeline utiliza identificadores calculados y particionado en S3 para desacoplar el sistema de los proveedores y garantizar idempotencia en las cargas.
+
+<h3>Identificadores</h3>
+
+<div align="center">
+  <table>
+    <thead>
+      <tr><th>Identificador</th><th>Regla</th><th>Capa</th><th>Descripción</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code>season_id</code></td>
+        <td><code>liganacional{año_inicio}{año_fin}_basketball</code></td>
+        <td>Bronze</td>
+        <td>Corte en Agosto (mes 8). Si la fecha es &ge; 8, corresponde al año de inicio y siguiente (ej: <code>liganacional20232024_basketball</code>).</td>
+      </tr>
+      <tr>
+        <td><code>cat_id</code></td>
+        <td>Consulta en API</td>
+        <td>Bronze</td>
+        <td>Resuelve en el servidor de CABB la categoría según la liga y el <code>season_id</code>.</td>
+      </tr>
+      <tr>
+        <td><code>match_id</code></td>
+        <td><code>UUIDv5(MATCH_{YYYYMMDD}_{LOCAL}_{VISITANTE})</code></td>
+        <td>Silver</td>
+        <td>Generado a partir de nombres de equipos y fecha.</td>
+      </tr>
+      <tr>
+        <td><code>team_id</code> / <code>player_id</code></td>
+        <td><code>UUIDv5(TEAM_{NOMBRE})</code> / <code>UUIDv5(PLAYER_{NOMBRE})</code></td>
+        <td>Silver</td>
+        <td>Generado sobre el texto normalizado (sin tildes ni caracteres especiales).</td>
+      </tr>
+      <tr>
+        <td><code>pbp_uuid</code></td>
+        <td><code>UUIDv5({match_id}_{period}_{clk}_{seq}_{event_type})</code></td>
+        <td>Silver</td>
+        <td>Clave primaria para eventos de juego según partido, período, reloj, secuencia y tipo de evento.</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+Los identificadores en Silver se generan con <code>uuid.uuid5</code> bajo el namespace <code>basketball.etl.system</code>. Ante los mismos datos de entrada se produce el mismo hash, permitiendo reprocesar datos sin duplicar registros.
+
+<h3>Almacenamiento en S3</h3>
+
+El almacenamiento se organiza en S3 según la capa:
+
+<ul>
+  <li><b>Capa Bronze (JSON):</b>
+    <ul>
+      <li>Partidos finalizados: <code>raw/{tipo_dato}_{season_id}/{match_id}.json</code> (donde <code>tipo_dato</code> es <code>pbp</code>, <code>agg_by_player</code> o <code>agg_by_team</code>). Permite verificar existencia en S3 por temporada y descargar registros faltantes.</li>
+      <li>Partidos futuros: <code>raw/upcoming/{match_id}.json</code>. Se sobrescribe en cada ejecución con los partidos no disputados.</li>
+      <li>Perfiles de sesión: <code>raw/profiles/{profile_id}.json</code>. Contiene estado y tokens de sesión para el scraping.</li>
+    </ul>
+  </li>
+  <li><b>Capas Silver y Gold (Parquet):</b>
+    <ul>
+      <li>Archivos en formato Parquet bajo <code>curated/</code> (Silver) y <code>analytics/</code> (Gold).</li>
+      <li>La escritura ejecuta Upsert: lee el archivo en S3, realiza merge con los registros entrantes mediante claves primarias y sobrescribe el archivo resultante.</li>
+    </ul>
+  </li>
+</ul>
 
 
 <h2 id="bronze">Capa Bronze</h2>
@@ -121,66 +179,43 @@ También, `dim_match` agrega un campo `result` que no existe en Silver, derivado
 
 
 
-</details>
+<h2 id="deployment">Deployment</h2>
 
-<details>
-<summary><strong>Setup</strong> (click para expandir)</summary>
+El pipeline se ejecuta de forma <b>Serverless</b> orquestado por Prefect Cloud sobre la infraestructura administrada (Managed Pool), sin necesidad de mantener servidores o workers dedicados.
 
-# Guía de Configuración: Prefect Serverless & CI/CD
+<h3>Configuración de Secretos</h3>
 
-Esta guía detalla los pasos necesarios para configurar el entorno de producción para el scraper de la CABB utilizando **Prefect Cloud** y **GitHub Actions**.
+Para el acceso a AWS S3, Prefect Cloud y el repositorio privado de extracción, se configuran los siguientes secretos en el repositorio 
 
-## 1. Configuración de GitHub (Secrets)
+<div align="center">
+  <table>
+    <thead>
+      <tr><th>Nombre</th><th>Descripción</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>GIT_TOKEN</code></td><td>Personal Access Token con permisos de lectura para instalar la librería privada <code>cabb-client</code>.</td></tr>
+      <tr><td><code>PREFECT_API_KEY</code></td><td>API Key de autenticación en Prefect Cloud.</td></tr>
+      <tr><td><code>PREFECT_API_URL</code></td><td>URL del workspace de Prefect Cloud.</td></tr>
+      <tr><td><code>S3_BUCKET_NAME</code></td><td>Nombre del bucket de AWS S3 donde se almacena el data warehouse.</td></tr>
+      <tr><td><code>AWS_ACCESS_KEY_ID</code></td><td>Access Key ID de AWS IAM con permisos en S3.</td></tr>
+      <tr><td><code>AWS_SECRET_ACCESS_KEY</code></td><td>Secret Access Key de AWS IAM.</td></tr>
+      <tr><td><code>AWS_REGION</code></td><td>Región de AWS (ej: <code>us-east-1</code>).</td></tr>
+      <tr><td><code>S3_RAW_PREFIX</code></td><td>Prefijo de la capa Bronze en S3 (<code>raw</code>).</td></tr>
+      <tr><td><code>S3_CURATED_PREFIX</code></td><td>Prefijo de la capa Silver en S3 (<code>curated</code>).</td></tr>
+      <tr><td><code>S3_ANALYTICS_PREFIX</code></td><td>Prefijo de la capa Gold en S3 (<code>analytics</code>).</td></tr>
+    </tbody>
+  </table>
+</div>
 
-Para que el despliegue automático funcione, ve a tu repositorio en GitHub: **Settings > Secrets and variables > Actions** y agrega los siguientes "Repository Secrets":
+<h3>Infraestructura en Prefect Cloud</h3>
 
-| Nombre | Descripción |
-| :--- | :--- |
-| `PREFECT_API_KEY` | Tu API Key de Prefect Cloud (empieza con `pnu_`). |
-| `PREFECT_API_URL` | La URL de tu workspace de Prefect Cloud. |
+El pool de ejecución requerido en Prefect Cloud es de tipo <b>Prefect Managed</b>:
+1. En Prefect Cloud, ir a <b>Work Pools</b>.
+2. Crear un pool seleccionando el tipo <b>Prefect Managed</b>.
+3. Asignar el nombre <code>default-managed</code>.
 
-## 2. Configuración de Prefect Cloud
+Los secretos (credenciales de S3 y token de GitHub) se sincronizan automáticamente con Github Actions hacia Prefect Cloud.
 
-### A. Crear el Work Pool (Infraestructura)
-Antes del primer despliegue, debes crear el lugar donde correrá el código:
-1. En Prefect Cloud, ve a **Work Pools**.
-2. Haz clic en **Create Work Pool**.
-3. Selecciona el tipo **Prefect Managed**.
-4. Nombre del pool: `default-managed`.
-5. Haz clic en **Create**.
 
-### B. Bloques (Blocks) - Acceso al Repositorio
-Para clonar tu repositorio privado:
-1. En Prefect Cloud, ve a **Blocks** > **+ Add Block**.
-2. Selecciona **Secret**.
-3. **Block Name:** `github-token`
-4. **Value:** Tu GitHub Personal Access Token (PAT) con permisos de lectura.
-
-### C. Variables - Configuración de la App
-Ve a **Variables** en el menú lateral y agrega las siguientes para que el flujo las use en tiempo de ejecución:
-
-| Variable | Valor sugerido / Ejemplo |
-| :--- | :--- |
-| `AWS_ACCESS_KEY_ID` | Tu Access Key de AWS. |
-| `AWS_SECRET_ACCESS_KEY` | Tu Secret Key de AWS. |
-| `AWS_REGION` | `us-east-1` |
-| `S3_BUCKET_NAME` | `lbn-basket` |
-| `S3_RAW_PREFIX` | `raw` |
-| `S3_CURATED_PREFIX` | `curated` |
-
-## 3. Despliegue (CI/CD)
-
-Una vez configurados los secretos en GitHub, el despliegue es automático:
-
-1. Haz un `push` a la rama `migrate-to-prefect`.
-2. GitHub Actions ejecutará el workflow "Deploy to Prefect Cloud".
-3. Al terminar, verás un nuevo "Deployment" llamado `daily-cabb-etl` en tu dashboard de Prefect Cloud.
-
-## 4. Ejecución y Monitoreo
-
-- **Schedule:** El flujo está programado para ejecutarse diariamente a las 00:00 UTC.
-- **Manual:** Puedes disparar una ejecución manual desde el botón "Run" en la página del Deployment en Prefect Cloud.
-- **Logs:** Todos los logs de scraping y procesamiento aparecerán en tiempo real en la pestaña "Runs" de Prefect.
-
-</details>
-
+<h2 id="todo">TODO</h2>
+- Agregar diferentes fuentes de datos para enriquecer datos de jugadores ej: altura
