@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 # 1. Imagen base de Python ligera
 FROM python:3.11-slim
 
@@ -18,9 +19,10 @@ RUN apt-get update && apt-get install -y \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# 4. Instalación del paquete privado cabb-client
-ARG GITHUB_TOKEN
-RUN pip install --no-cache-dir "git+https://${GITHUB_TOKEN}@github.com/martindieser/cabb-client.git"
+# 4. Instalación del paquete privado cabb-client de forma segura (sin filtrar token en el historial)
+RUN --mount=type=secret,id=git_token \
+    GIT_TOKEN=$(cat /run/secrets/git_token) && \
+    pip install --no-cache-dir "git+https://x-access-token:${GIT_TOKEN}@github.com/martindieser/cabb-client.git"
 
 # 5. Código del proyecto
 COPY . .
