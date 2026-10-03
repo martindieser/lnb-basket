@@ -10,3 +10,4 @@ logs/
 notebooks/
 tracker/
 .env
+scripts/
